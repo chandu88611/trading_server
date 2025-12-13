@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const brokerSession_controller_1 = require("../controller/brokerSession.controller");
+const auth_1 = require("../../../../middleware/auth");
+const ctrl = new brokerSession_controller_1.BrokerSessionController();
+const router = (0, express_1.Router)();
+router.post("/", (0, auth_1.requireAuth)([auth_1.Roles.USER]), ctrl.create.bind(ctrl));
+router.get("/valid/:credentialId", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.listValid.bind(ctrl));
+router.post("/revoke-all/:credentialId", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.revokeAll.bind(ctrl));
+exports.default = router;
