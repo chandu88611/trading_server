@@ -2,6 +2,7 @@ import AppDataSource from "../../../../db/data-source";
 import { Repository } from "typeorm";
 import { BrokerCredential, User } from "../../../../entity";
 import { ICreateBrokerCredential, IUpdateBrokerCredential } from "../interfaces/brokerCredential.interface";
+import { HttpStatusCode } from "../../../../types/constants";
 
 export class BrokerCredentialDB {
   private repo: Repository<BrokerCredential>;
@@ -10,6 +11,20 @@ export class BrokerCredentialDB {
   constructor() {
     this.repo = AppDataSource.getRepository(BrokerCredential);
     this.userRepo = AppDataSource.getRepository(User);
+  }
+  async getCredentialIdByUserId(userId: number):Promise<number>{
+    try {
+      const credential = await this.repo.findOne({ where: { user: { id: userId } } });
+      if (!credential){
+        throw{
+          statusCode: HttpStatusCode._BAD_REQUEST,
+          message: "credential_not_found"
+        }
+      }
+      return credential.id;
+    } catch (error) {
+      throw error;
+    }
   }
 
   async create(payload: ICreateBrokerCredential) {
@@ -23,7 +38,7 @@ export class BrokerCredentialDB {
       encRequestToken: payload.encRequestToken ?? null,
       status: payload.status ?? "active",
     });
-    return this.repo.save(record);
+    return await this.repo.save(record);
   }
 
   async getById(id: number) {

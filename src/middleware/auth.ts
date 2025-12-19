@@ -6,7 +6,7 @@ export enum Roles {
   ADMIN = "ADMIN",
 }
 
-const ACCESS_TOKEN_EXPIRES = "15m";  // keep short for access
+const ACCESS_TOKEN_EXPIRES = "30d"; // keep short for access
 const REFRESH_TOKEN_EXPIRES = "15d";
 
 // ✅ Always read secret from env at runtime (not once at import)
@@ -33,7 +33,12 @@ export function signAccessToken(payload: Record<string, any>) {
     expiresIn: ACCESS_TOKEN_EXPIRES,
   });
 
-  console.log("[JWT] signAccessToken secretLen:", secret.length, "token:", mask(token));
+  console.log(
+    "[JWT] signAccessToken secretLen:",
+    secret.length,
+    "token:",
+    mask(token)
+  );
   return token;
 }
 
@@ -43,7 +48,12 @@ export function signRefreshToken(payload: Record<string, any>) {
     expiresIn: REFRESH_TOKEN_EXPIRES,
   });
 
-  console.log("[JWT] signRefreshToken secretLen:", secret.length, "token:", mask(token));
+  console.log(
+    "[JWT] signRefreshToken secretLen:",
+    secret.length,
+    "token:",
+    mask(token)
+  );
   return token;
 }
 
@@ -69,7 +79,12 @@ export function requireAuth(roles?: Roles[]) {
 
     try {
       const secret = getJwtSecret();
-      console.log("[AUTH] verify Bearer secretLen:", secret.length, "token:", mask(token));
+      console.log(
+        "[AUTH] verify Bearer secretLen:",
+        secret.length,
+        "token:",
+        mask(token)
+      );
 
       const decoded = jwt.verify(token, secret) as any;
 
@@ -78,9 +93,16 @@ export function requireAuth(roles?: Roles[]) {
       }
 
       req.auth = { userId: String(decoded.userId), roles: decoded.roles };
+      console.log(
+        "[AUTH] verified token for userId:",
+        req.auth.userId,
+        "roles:",
+        req.auth.roles
+      );
 
       if (roles && roles.length) {
-        const has = decoded.roles && roles.some((r) => decoded.roles.includes(r));
+        const has =
+          decoded.roles && roles.some((r) => decoded.roles.includes(r));
         if (!has) return res.status(403).json({ message: "Forbidden" });
       }
 
@@ -92,4 +114,10 @@ export function requireAuth(roles?: Roles[]) {
   };
 }
 
-export default { requireAuth, signAccessToken, signRefreshToken, getJwtSecret, Roles };
+export default {
+  requireAuth,
+  signAccessToken,
+  signRefreshToken,
+  getJwtSecret,
+  Roles,
+};

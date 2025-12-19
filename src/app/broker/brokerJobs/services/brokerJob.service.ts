@@ -1,3 +1,4 @@
+import { QueryRunner } from "typeorm";
 import { BrokerJobDB } from "../db/brokerJob.db";
 import {
   ICreateBrokerJob,
@@ -9,6 +10,14 @@ export class BrokerJobService {
 
   async create(payload: ICreateBrokerJob) {
     return this.db.create(payload);
+  }
+
+  async getOrCreateBrokerJobId(payload: ICreateBrokerJob, queryRunner:QueryRunner):Promise<number>{
+    try {
+      return await this.db.getOrCreateBrokerJobId(payload, queryRunner)
+    } catch (error) {
+      throw error;
+    }
   }
 
   async update(id: number, payload: IUpdateBrokerJob) {

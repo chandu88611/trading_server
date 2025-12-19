@@ -26,7 +26,7 @@ export class ApplicationRouter {
     this.applicationRoutes.use("/broker/jobs", BrokerJobRouter);
     this.applicationRoutes.use("/broker/events", BrokerEventRouter);
     this.applicationRoutes.use("/broker/signals", TradeSignalRouter);
-    this.applicationRoutes.use("/broker/alerts", AlertSnapshotRouter);
+    this.applicationRoutes.use("/tradingview/alerts", AlertSnapshotRouter);
     this.applicationRoutes.use("/admin/plans", new SubscriptionPlanRouter().getRouter());
 
   }

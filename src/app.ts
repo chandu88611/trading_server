@@ -23,36 +23,33 @@ export default class Server {
     this.routes();
   }
 
-  
-private config() {
-  const allowedOrigins = [
-    process.env.FRONTEND_ORIGIN || "",
-    "http://localhost:5173",
-    "http://localhost:5175",
-    "http://localhost:5174",
-    "http://localhost:3000",
-    "https://globalalgotrading.com",
-  ].filter(Boolean);
+  private config() {
+    const allowedOrigins = [
+      process.env.FRONTEND_ORIGIN || "",
+      "http://localhost:5173",
+      "http://localhost:5175",
+      "http://localhost:5174",
+      "http://localhost:3000",
+      "https://globalalgotrading.com",
+    ].filter(Boolean);
 
-  this.app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (allowedOrigins.includes(origin)) return cb(null, true);
-        return cb(new Error("CORS blocked"), false);
-      },
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-    })
-  );
+    this.app.use(
+      cors({
+        origin: (origin, cb) => {
+          if (!origin) return cb(null, true);
+          if (allowedOrigins.includes(origin)) return cb(null, true);
+          return cb(new Error("CORS blocked"), false);
+        },
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+      })
+    );
 
-  this.app.use(cookieParser());
-  this.app.use(express.json());
-  this.app.use(express.urlencoded({ extended: true }));
-}
-
-
+    this.app.use(cookieParser());
+    this.app.use(express.json());
+    this.app.use(express.urlencoded({ extended: true }));
+  }
 
   private routes() {
     this.app.use(

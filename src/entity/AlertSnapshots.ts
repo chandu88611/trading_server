@@ -26,31 +26,31 @@ export class AlertSnapshot {
   ticker!: string;
 
   @Column({ type: "varchar", length: "50", nullable: true })
-  exchange!: string | null;
+  exchange!: string;
 
   @Column({ type: "varchar", length: 10, nullable: true })
-  interval!: string | null;
+  interval!: string;
 
   @Column({ name: "bar_time", type: "timestamptz", nullable: true })
-  barTime!: Date | null;
+  barTime!: Date;
 
   @Column({ name: "alert_time", type: "timestamptz", nullable: true })
-  alertTime!: Date | null;
+  alertTime!: Date;
 
   @Column({ type: "numeric", precision: 15, scale: 6, nullable: true })
-  open!: number | null;
+  open!: number;
 
   @Column({ type: "numeric", precision: 15, scale: 6, nullable: true })
-  close!: number | null;
+  close!: number;
 
   @Column({ type: "numeric", precision: 15, scale: 6, nullable: true })
-  high!: number | null;
+  high!: number;
 
   @Column({ type: "numeric", precision: 15, scale: 6, nullable: true })
-  low!: number | null;
+  low!: number;
 
   @Column({ type: "numeric", precision: 20, scale: 2, nullable: true })
-  volume!: number | null;
+  volume!: number;
 
   @Column({ type: "varchar", length: 10, nullable: true })
   currency!: string | null;

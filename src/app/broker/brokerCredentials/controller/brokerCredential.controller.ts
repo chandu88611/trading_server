@@ -1,13 +1,19 @@
 import { Request, Response } from "express";
 import { BrokerCredentialService } from "../services/brokerCredential.service";
 import { ControllerError } from "../../../../types/error-handler";
+import { AuthRequest } from "../../../../middleware/auth";
 
 export class BrokerCredentialController {
   private service = new BrokerCredentialService();
 
   @ControllerError()
-  async create(req: Request, res: Response) {
-    const payload = req.body;
+  async create(req: AuthRequest, res: Response) {
+    let payload = req.body;
+    if(payload === null || payload === undefined){
+      payload = {};
+    }
+    let userId = req.auth!.userId;
+    payload.userId = userId;
     const created = await this.service.create(payload);
     res.status(201).json({ message: "created", data: created });
   }

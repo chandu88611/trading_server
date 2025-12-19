@@ -3,6 +3,7 @@ import { Repository, ILike } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 import { SubscriptionPlan } from "../../../entity/SubscriptionPlan";
 import { ICreateSubscriptionPlan, IQueryPlans, IUpdateSubscriptionPlan } from "../interfaces/subscriberPlan.interface";
+import { AssetType } from "../../../types/trade-identify";
 
 export class SubscriptionPlanDBService {
   private planRepo: Repository<SubscriptionPlan>;
@@ -96,4 +97,5 @@ export class SubscriptionPlanDBService {
       order: { priceCents: "ASC" },
     });
   }
+
 }

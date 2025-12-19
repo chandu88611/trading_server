@@ -1,5 +1,5 @@
 import AppDataSource from "../../../../db/data-source";
-import { Repository } from "typeorm";
+import { QueryRunner, Repository } from "typeorm";
 import { ICreateAlertSnapshot } from "../interfaces/alertSnapshot.interface";
 import { AlertSnapshot } from "../../../../entity/AlertSnapshots";
 import { BrokerJob } from "../../../../entity";
@@ -13,28 +13,33 @@ export class AlertSnapshotDB {
     this.jobRepo = AppDataSource.getRepository(BrokerJob);
   }
 
-  async create(payload: ICreateAlertSnapshot) {
-    const job = await this.jobRepo.findOne({ where: { id: payload.jobId } });
-    if (!job) throw new Error("job_not_found");
-    const entity = this.repo.create({
-      brokerJob: { id: payload.jobId } as BrokerJob,
-      ticker: payload.ticker,
-      exchange: payload.exchange ?? null,
-      interval: payload.interval ?? null,
-      barTime: payload.barTime ?? null,
-      alertTime: payload.alertTime ?? null,
-      open: payload.open ?? null,
-      close: payload.close ?? null,
-      high: payload.high ?? null,
-      low: payload.low ?? null,
-      volume: payload.volume ?? null,
-      currency: payload.currency ?? null,
-      baseCurrency: payload.baseCurrency ?? null,
-    });
-    return this.repo.save(entity);
+  async create(payload: ICreateAlertSnapshot, brokerJobId: number, queryRunner:QueryRunner) {
+    try {
+      const entity: AlertSnapshot = queryRunner.manager.getRepository(AlertSnapshot).create({
+        brokerJob: { id: brokerJobId } as BrokerJob,
+        ticker: payload.ticker,
+        exchange: payload.exchange,
+        interval: payload.interval,
+        barTime: payload.barTime,
+        alertTime: payload.alertTime,
+        open: payload.open,
+        close: payload.close,
+        high: payload.high,
+        low: payload.low,
+        volume: payload.volume,
+        currency: payload.currency ?? null,
+        baseCurrency: payload.baseCurrency ?? null,
+      });
+      return await queryRunner.manager.getRepository(AlertSnapshot).save(entity);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async listByJob(jobId: number) {
-    return this.repo.find({ where: { brokerJob: { id: jobId } }, order: { createdAt: "DESC" } });
+    return this.repo.find({
+      where: { brokerJob: { id: jobId } },
+      order: { createdAt: "DESC" },
+    });
   }
 }

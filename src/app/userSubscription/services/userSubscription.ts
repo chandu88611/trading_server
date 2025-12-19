@@ -4,6 +4,7 @@ import {
   IUserSubscriptionCancelPayload,
 } from "../interfaces/userSubscription.interface";
 import { UserSubscriptionStatus } from "../enums/userSubscription.enum";
+import { AssetType } from "../../../types/trade-identify";
 
 export class UserSubscriptionService {
   private db: UserSubscriptionDBService;
@@ -48,5 +49,13 @@ export class UserSubscriptionService {
 
   getUserSubscriptions(userId: number) {
     return this.db.getUserSubscriptions(userId);
+  }
+
+  async subscriberPlanValidation(userId:number, assetType:AssetType){
+    try {
+      return await this.db.subscriberPlanValidation(userId, assetType);
+    } catch (error) {
+      throw error;
+    }
   }
 }

@@ -1,14 +1,18 @@
 import { Request, Response } from "express";
 import { AlertSnapshotService } from "../services/alertSnapshot.service";
 import { ControllerError } from "../../../../types/error-handler";
+import { AuthRequest } from "../../../../middleware/auth";
+import { AlertSnapshot } from "../../../../entity/AlertSnapshots";
 
 export class AlertSnapshotController {
   private service = new AlertSnapshotService();
 
   @ControllerError()
-  async create(req: Request, res: Response) {
+  async create(req: AuthRequest, res: Response) {
     const payload = req.body;
-    const s = await this.service.create(payload);
+    const userId = req.auth!.userId;
+    const fullPayload = { ...payload, userId };
+    const s: AlertSnapshot | undefined = await this.service.create(fullPayload);
     res.status(201).json({ message: "created", data: s });
   }
 

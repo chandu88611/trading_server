@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from "typeorm";
 import { BrokerJob } from "./BrokerJob";
+import { AssetType } from "../types/trade-identify";
 
 @Entity({ name: "trade_signals" })
 export class TradeSignal {
@@ -32,6 +33,9 @@ export class TradeSignal {
 
   @Column({ type: "varchar", length: 50 })
   exchange!: string;
+
+  @Column({ name: "asset_type", type: "varchar", length: 20, enum: AssetType })
+  assetType!: AssetType;
 
   @Column({ name: "signal_time", type: "timestamptz" })
   signalTime!: Date;

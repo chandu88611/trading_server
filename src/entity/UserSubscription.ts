@@ -5,6 +5,7 @@ import {
   ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
+  JoinColumn,
 } from "typeorm";
 import { User } from "./User";
 import { SubscriptionPlan } from "./SubscriptionPlan";
@@ -15,10 +16,18 @@ export class UserSubscription {
   @PrimaryGeneratedColumn()
   id!: number;
 
+  @Column({ name: "user_id", type: "int" })
+  userId!: number;
+
+  @Column({ name: "plan_id", type: "int" })
+  planId!: number;
+
   @ManyToOne(() => User, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "user_id" })
   user!: User;
 
   @ManyToOne(() => SubscriptionPlan)
+  @JoinColumn({ name: "plan_id" })
   plan!: SubscriptionPlan;
 
   /* NEW STATE MACHINE */

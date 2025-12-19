@@ -8,8 +8,15 @@ export class BrokerCredentialService {
   }
 
   async create(payload: ICreateBrokerCredential) {
-    // encryption/validation could be added here
-    return this.db.create(payload);
+    
+    return await this.db.create(payload);
+  }
+  async getCredentialIdByUserId(userId: number):Promise<number>{
+    try {
+      return await this.db.getCredentialIdByUserId(userId);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async get(id: number) {

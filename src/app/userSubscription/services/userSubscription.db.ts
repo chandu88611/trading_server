@@ -2,6 +2,7 @@ import { Repository } from "typeorm";
 import { UserSubscription, SubscriptionPlan } from "../../../entity";
 import AppDataSource from "../../../db/data-source";
 import { UserSubscriptionStatus } from "../enums/userSubscription.enum";
+import { AssetType } from "../../../types/trade-identify";
 
 export class UserSubscriptionDBService {
   private subRepo: Repository<UserSubscription>;
@@ -67,5 +68,23 @@ export class UserSubscriptionDBService {
       relations: ["plan"],
       order: { createdAt: "DESC" },
     });
+  }
+
+  async subscriberPlanValidation(userId: number, assetType: AssetType) {
+    try {
+      let plan = await this.subRepo
+        .createQueryBuilder("user_subscription")
+        .innerJoinAndSelect("user_subscription.plan", "plan")
+        .where("user_subscription.user_id = :userId", { userId })
+        .andWhere("user_subscription.status = :status", {
+          status: UserSubscriptionStatus.ACTIVE,
+        })
+        .andWhere("plan.category = :assetType", { assetType })
+        .getOne();
+
+      return plan;
+    } catch (error) {
+      throw error;
+    }
   }
 }
