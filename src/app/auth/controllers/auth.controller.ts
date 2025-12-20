@@ -10,6 +10,9 @@ import {
   signRefreshToken,
 } from "../../../middleware/auth";
 import { access } from "fs";
+import { generateVerificationToken } from "../../../types/token";
+import { sendVerificationEmail } from "../../../types/email.service";
+import { AuthService } from "../services/auth.service";
 
 const userService = new UserService();
 const userDb = new UserDBService();
@@ -101,6 +104,11 @@ function logReq(req: Request, label: string) {
 }
 
 export class AuthController {
+   private readonly authService: AuthService;
+
+  constructor() {
+    this.authService = new AuthService();
+  }
   async login(req: Request, res: Response) {
     logReq(req, "LOGIN");
     try {
@@ -320,6 +328,37 @@ export class AuthController {
 
   async revoke(req: Request, res: Response) {
     return this.logout(req, res);
+  }
+  async registerUser(req: Request, res: Response): Promise<Response> {
+    const { email } = req.body as { email: string };
+
+    const token = generateVerificationToken();
+
+    // ✅ Save token in DB with expiry (recommended)
+    // await userRepo.save({ email, token, expiresAt })
+
+    await sendVerificationEmail({ email, token });
+
+    return res.status(200).json({
+      message: "Verification email sent",
+    });
+  }
+
+  async verifyEmail(req: Request, res: Response): Promise<Response> {
+    const { token } = req.query as { token?: string };
+
+    if (!token) {
+      return res.status(400).json({ message: "Invalid token" });
+    }
+
+    // 1. Find user by token
+    // 2. Check expiry
+    // 3. Mark email as verified
+    // 4. Remove token
+
+    return res.status(200).json({
+      message: "Email verified successfully",
+    });
   }
 }
 

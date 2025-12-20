@@ -22,6 +22,12 @@ export class UserRouter {
       userController.registerUser.bind(userController)
     );
 
+    this.userRoutes.get(
+      "/verify-email",
+      createRateLimiter({ max: 20, windowMs: 60_000 }),
+      userController.verifyEmail.bind(userController)
+    );
+
     this.userRoutes.get("/me", requireAuth([Roles.USER]), (req, res) =>
       res.json({ message: "ok", user: (req as any).auth })
     );

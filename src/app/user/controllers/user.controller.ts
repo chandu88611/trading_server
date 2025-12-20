@@ -57,4 +57,19 @@ export class UserController {
       },
     });
   }
+  @ControllerError()
+  async verifyEmail(req: Request, res: Response): Promise<void> {
+    const { token } = req.query as { token?: string };
+
+    if (!token) {
+      res.status(400).json({ message: "Invalid token" });
+      return;
+    }
+
+    await this.service.verifyEmail(token);
+
+    res.status(200).json({
+      message: "Email verified successfully",
+    });
+  }
 }

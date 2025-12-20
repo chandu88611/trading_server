@@ -9,6 +9,8 @@ import {
 } from "../../../middleware/auth";
 import { User } from "../../../entity/User";
 import { AuthProvider } from "../../../entity/AuthProvider";
+import { generateEmailVerificationToken } from "../utils/email-verification.util";
+import { sendUserVerificationEmail } from "./email-verification.service";
 
 const SALT_ROUNDS = 12;
 const REFRESH_TTL_MS = 1000 * 60 * 60 * 24 * 15; // 15 days
@@ -52,10 +54,20 @@ export class UserService {
       isEmailVerified: false,
     });
 
+    const { raw, hash: tokenHash } = generateEmailVerificationToken();
+    await this.db.setEmailVerificationToken(user.id, tokenHash);
+
+    await sendUserVerificationEmail(user.email, raw);
+
     const access = signAccessToken({ userId: user.id, roles: [Roles.USER] });
     const { refreshJwt } = await this.issueRefreshToken(user);
 
-    return { user, accessToken: access, refreshToken: refreshJwt };
+    return {
+      user,
+      accessToken: access,
+      refreshToken: refreshJwt,
+      emailVerificationRequired: true,
+    };
   }
 
   // ========== REGISTER/LOGIN WITH PROVIDER (GOOGLE, ETC) ==========
@@ -123,4 +135,25 @@ export class UserService {
 
     return { refreshJwt };
   }
+
+
+  async verifyEmail(token: string): Promise<void> {
+    if (!token) {
+      throw new Error("Invalid token");
+    }
+
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const user = await this.db.findByVerificationToken(tokenHash);
+
+    if (!user) {
+      throw new Error("Invalid or expired verification token");
+    }
+
+    await this.db.markEmailVerified(user.id);
+  }
+
 }

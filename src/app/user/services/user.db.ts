@@ -100,4 +100,35 @@ export class UserDBService {
       { revoked: true }
     );
   }
+    async setEmailVerificationToken(
+    userId: number,
+    tokenHash: string
+  ): Promise<void> {
+    await this.userRepo.update(
+      { id: userId },
+      { verificationToken: tokenHash }
+    );
+  }
+
+  async findByVerificationToken(
+    tokenHash: string
+  ): Promise<User | null> {
+    return this.userRepo.findOne({
+      where: {
+        verificationToken: tokenHash,
+        isEmailVerified: false,
+      },
+    });
+  }
+
+  async markEmailVerified(userId: number): Promise<void> {
+    await this.userRepo.update(
+      { id: userId },
+      {
+        isEmailVerified: true,
+        verificationToken: null,
+      }
+    );
+  }
+
 }
