@@ -28,8 +28,10 @@ export class UserRouter {
       userController.verifyEmail.bind(userController)
     );
 
-    this.userRoutes.get("/me", requireAuth([Roles.USER]), (req, res) =>
-      res.json({ message: "ok", user: (req as any).auth })
+    this.userRoutes.get(
+      "/me",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.getUserDetails.bind(userController)
     );
   }
 

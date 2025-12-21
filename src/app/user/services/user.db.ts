@@ -3,6 +3,7 @@ import AppDataSource from "../../../db/data-source";
 import { User } from "../../../entity/User";
 import { AuthProvider } from "../../../entity/AuthProvider";
 import { RefreshToken } from "../../../entity/RefreshToken";
+import { HttpStatusCode } from "../../../types/constants";
 
 export class UserDBService {
   private userRepo = AppDataSource.getRepository(User);
@@ -70,7 +71,9 @@ export class UserDBService {
     return this.tokenRepo.save(rt);
   }
 
-  async findRefreshTokenByHash(tokenHash: string): Promise<RefreshToken | null> {
+  async findRefreshTokenByHash(
+    tokenHash: string
+  ): Promise<RefreshToken | null> {
     return this.tokenRepo.findOne({
       where: { tokenHash },
       relations: ["user"],
@@ -88,19 +91,13 @@ export class UserDBService {
   }
 
   async revokeRefreshTokenByHash(tokenHash: string): Promise<void> {
-    await this.tokenRepo.update(
-      { tokenHash },
-      { revoked: true }
-    );
+    await this.tokenRepo.update({ tokenHash }, { revoked: true });
   }
 
   async revokeAllRefreshTokensForUser(userId: number): Promise<void> {
-    await this.tokenRepo.update(
-      { userId },
-      { revoked: true }
-    );
+    await this.tokenRepo.update({ userId }, { revoked: true });
   }
-    async setEmailVerificationToken(
+  async setEmailVerificationToken(
     userId: number,
     tokenHash: string
   ): Promise<void> {
@@ -110,9 +107,7 @@ export class UserDBService {
     );
   }
 
-  async findByVerificationToken(
-    tokenHash: string
-  ): Promise<User | null> {
+  async findByVerificationToken(tokenHash: string): Promise<User | null> {
     return this.userRepo.findOne({
       where: {
         verificationToken: tokenHash,
@@ -131,4 +126,21 @@ export class UserDBService {
     );
   }
 
+    async getUserDetails(userId: number): Promise<User> {
+      try{let userData:User|null = await this.userRepo.findOne({
+        where: { id: userId },
+        select: ["id", "email", "name", "isEmailVerified", "isActive", "isAdmin"],
+      });
+      if (!userData) {
+        throw{
+          statusCode: HttpStatusCode._BAD_REQUEST,
+          message: "user_not_found"
+        }
+      } else {
+        return userData;
+        }}
+        catch (error) {
+          throw error;
+        }
+    }
 }

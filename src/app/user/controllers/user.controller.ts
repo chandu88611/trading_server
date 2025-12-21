@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
 import { UserService } from "../services/user.service";
+import { AuthRequest } from "../../../middleware/auth";
 
 export class UserController {
   private service = new UserService();
@@ -71,5 +72,12 @@ export class UserController {
     res.status(200).json({
       message: "Email verified successfully",
     });
+  }
+
+  @ControllerError()
+  async getUserDetails(req: AuthRequest, res: Response): Promise<void> {
+    const userId = req.auth!.userId;
+    const userData = await this.service.getUserDetails(Number(userId));
+    res.status(200).json({ message: "ok", data: userData });
   }
 }

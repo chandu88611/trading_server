@@ -31,6 +31,7 @@ export default class Server {
       "http://localhost:5174",
       "http://localhost:3000",
       "https://globalalgotrading.com",
+      "https://tradebro.io"
     ].filter(Boolean);
 
     this.app.use(

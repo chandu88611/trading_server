@@ -155,5 +155,12 @@ export class UserService {
 
     await this.db.markEmailVerified(user.id);
   }
+  async getUserDetails(userId: number): Promise<User> {
+    try {
+          return this.db.getUserDetails(userId);
+    } catch (error) {
+     throw error 
+    }
+  }
 
 }
