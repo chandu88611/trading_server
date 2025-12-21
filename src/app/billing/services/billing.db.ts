@@ -23,6 +23,53 @@ export class BillingDBService {
     this.userRepo = AppDataSource.getRepository(User);
   }
 
+  async getUserSubscriptionEntity(userId: number) {
+    return this.userSubRepo.findOne({ where: { userId } });
+  }
+  async getCurrentSubscription(userId: number) {
+    const sub = await this.userSubRepo.findOne({ where: { userId } });
+    if (!sub) return null;
+
+    const plan = await this.planRepo.findOne({ where: { id: sub.planId } });
+
+    // You can shape this exactly how UI needs
+    return {
+      id: sub.id,
+      userId: sub.userId,
+      planId: sub.planId,
+      status: sub.status,
+      startDate: sub.startDate,
+      endDate: sub.endDate,
+      cancelAtPeriodEnd: Boolean(sub?.metadata?.cancel_at_period_end),
+      stripeSubscriptionId: this.extractStripeSubscriptionId(sub),
+      plan: plan
+        ? {
+            id: plan.id,
+            name: plan.name,
+            description: plan.description,
+            priceCents: plan.priceCents,
+            currency: plan.currency,
+            interval: plan.interval,
+            isActive: (plan as any).isActive,
+            featureFlags: (plan as any).featureFlags, 
+            metadata: (plan as any).metadata,
+          }
+        : null,
+    };
+  }
+  extractStripeSubscriptionId(userSub: UserSubscription): string | null {
+    const m: any = userSub?.metadata;
+
+    if (m?.id && typeof m.id === "string" && m.id.startsWith("sub_")) return m.id;
+
+    if (m?.subscription?.id && typeof m.subscription.id === "string") return m.subscription.id;
+
+    if (m?.stripeSubscriptionId && typeof m.stripeSubscriptionId === "string")
+      return m.stripeSubscriptionId;
+
+    return null;
+  }
+
   async createInvoiceFromStripe(stripeInvoice: any) {
     const metadata = stripeInvoice?.lines?.data?.[0]?.price?.product?.metadata;
     const planId = metadata?.planId ? Number(metadata.planId) : undefined;

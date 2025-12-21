@@ -61,6 +61,15 @@ export class StripeService {
 
     return session;
   }
+  async cancelSubscriptionAtPeriodEnd(stripeSubscriptionId: string) {
+    return stripe.subscriptions.update(stripeSubscriptionId, {
+      cancel_at_period_end: true,
+    });
+  }
+
+  async cancelSubscriptionImmediate(stripeSubscriptionId: string) {
+    return stripe.subscriptions.cancel(stripeSubscriptionId);
+  }
 
   constructEvent(payload: Buffer, sigHeader: string, webhookSecret: string) {
     return stripe.webhooks.constructEvent(payload, sigHeader, webhookSecret);

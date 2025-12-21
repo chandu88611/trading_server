@@ -43,6 +43,52 @@ export class PaymentController {
   }
 
   @ControllerError()
+  async getCurrentSubscription(req: Request, res: Response) {
+    const userId = Number((req as any).auth?.userId);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const sub = await billingDb.getCurrentSubscription(userId);
+
+    if (!sub) return res.status(200).json({ message: "No subscription", data: null });
+
+    res.status(200).json({
+      message: "Fetched current subscription",
+      data: sub,
+    });
+  }
+
+  @ControllerError()
+  async cancelSubscription(req: Request, res: Response) {
+    const userId = Number((req as any).auth?.userId);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { immediate } = (req.body || {}) as { immediate?: boolean };
+
+    const existing = await billingDb.getUserSubscriptionEntity(userId);
+    if (!existing) {
+      return res.status(400).json({ message: "No active subscription to cancel" });
+    }
+
+    const stripeSubId = billingDb.extractStripeSubscriptionId(existing);
+    if (!stripeSubId) {
+      return res.status(400).json({
+        message: "Stripe subscription id missing in local subscription metadata",
+      });
+    }
+
+    const stripeSub = immediate
+      ? await stripeService.cancelSubscriptionImmediate(stripeSubId)
+      : await stripeService.cancelSubscriptionAtPeriodEnd(stripeSubId);
+
+    const updatedLocal = await billingDb.updateLocalSubscriptionOnStripeUpdate(stripeSub);
+
+    res.status(200).json({
+      message: immediate ? "Subscription canceled immediately" : "Subscription will cancel at period end",
+      data: updatedLocal,
+    });
+  }
+
+  @ControllerError()
   async webhook(req: Request, res: Response) {
     const sig = (req.headers["stripe-signature"] as string) || "";
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";

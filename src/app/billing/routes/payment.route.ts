@@ -25,6 +25,18 @@ export class PaymentRouter {
       stripeRawBody,           
       ctrl.webhook.bind(ctrl)
     );
+
+      this.router.get(
+    "/subscription/current",
+    requireAuth([Roles.USER]),
+    ctrl.getCurrentSubscription.bind(ctrl)
+  );
+
+  this.router.post(
+    "/subscription/cancel",
+    requireAuth([Roles.USER]),
+    ctrl.cancelSubscription.bind(ctrl)
+  );
   }
 
   getRouter() {

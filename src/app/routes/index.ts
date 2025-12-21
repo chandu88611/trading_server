@@ -9,6 +9,7 @@ import BrokerEventRouter from "../broker/brokerEvents/routes/brokerEvent.route";
 import TradeSignalRouter from "../broker/brokerSignals/routes/tradeSignal.route";
 import AlertSnapshotRouter from "../broker/brokerAlerts/routes/alertSnapshot.route";
 import { SubscriptionPlanRouter } from "../subscriptionPlan/routes/subscriptionPlan.route";
+import { PaymentRouter } from "../billing/routes/payment.route";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -28,7 +29,7 @@ export class ApplicationRouter {
     this.applicationRoutes.use("/broker/signals", TradeSignalRouter);
     this.applicationRoutes.use("/tradingview/alerts", AlertSnapshotRouter);
     this.applicationRoutes.use("/admin/plans", new SubscriptionPlanRouter().getRouter());
-
+    this.applicationRoutes.use("/billing", new PaymentRouter().getRouter());
   }
 
   getRouter() {
