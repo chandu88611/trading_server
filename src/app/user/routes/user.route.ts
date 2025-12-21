@@ -28,6 +28,19 @@ export class UserRouter {
       userController.verifyEmail.bind(userController)
     );
 
+     this.userRoutes.get(
+      "/billing",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.getBillingDetails.bind(userController)
+    );
+
+    this.userRoutes.put(
+      "/billing",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.updateBillingDetails.bind(userController)
+    );
+
+
     this.userRoutes.get(
       "/me",
       requireAuth([Roles.USER, Roles.ADMIN]),

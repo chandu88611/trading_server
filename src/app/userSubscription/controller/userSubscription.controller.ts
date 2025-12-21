@@ -11,7 +11,7 @@ export class UserSubscriptionController {
 
   @ControllerError()
   async subscribe(req: Request, res: Response) {
-    const userId = (req as any).auth.id;
+    const userId = (req as any).auth.userId;
     const payload = req.body;
 
     const subscription = await this.service.subscribe(userId, payload);
@@ -24,7 +24,7 @@ export class UserSubscriptionController {
 
   @ControllerError()
   async cancel(req: Request, res: Response) {
-    const userId = (req as any).auth.id;
+    const userId = (req as any).auth.userId;
     const payload = req.body;
 
     await this.service.cancel(userId, payload);
@@ -36,7 +36,7 @@ export class UserSubscriptionController {
 
   @ControllerError()
   async current(req: Request, res: Response) {
-    const userId = (req as any).auth.id;
+    const userId = (req as any).auth.userId;
 
     const subscription = await this.service.getCurrentSubscription(userId);
 

@@ -11,6 +11,7 @@ import { User } from "../../../entity/User";
 import { AuthProvider } from "../../../entity/AuthProvider";
 import { generateEmailVerificationToken } from "../utils/email-verification.util";
 import { sendUserVerificationEmail } from "./email-verification.service";
+import { UserBillingDetails } from "../../../entity/UserBillingDetails";
 
 const SALT_ROUNDS = 12;
 const REFRESH_TTL_MS = 1000 * 60 * 60 * 24 * 15; // 15 days
@@ -160,6 +161,24 @@ export class UserService {
           return this.db.getUserDetails(userId);
     } catch (error) {
      throw error 
+    }
+  }
+async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
+    try {
+      return this.db.getBillingDetails(userId);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async upsertBillingDetails(
+    userId: number,
+    payload: Partial<UserBillingDetails>
+  ): Promise<UserBillingDetails> {
+    try {
+      return this.db.upsertBillingDetails(userId, payload);
+    } catch (error) {
+      throw error;
     }
   }
 

@@ -16,6 +16,7 @@ import {
 } from "../entity";
 import { AlertSnapshot } from "../entity/AlertSnapshots";
 import { TradeSignal } from "../entity/TradeSignals";
+import { UserBillingDetails } from "../entity/UserBillingDetails";
 
 dotenv.config();
 
@@ -43,7 +44,8 @@ export const AppDataSource = new DataSource({
     SubscriptionPayment,
     SubscriptionPlan,
     TradeSignal,
-    UserSubscription
+    UserSubscription,
+    UserBillingDetails
   ],
   migrations: [],
   subscribers: [],

@@ -66,21 +66,45 @@ export interface AuthRequest extends Request {
  */
 export function requireAuth(roles?: Roles[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    const authHeader = req.headers.authorization;
-
     console.log("[AUTH] requireAuth:", req.method, req.originalUrl);
+
+    let token: string | undefined;
+
+    // 1️⃣ Try Authorization header (Postman / API)
+    const authHeader = req.headers.authorization;
     console.log("[AUTH] authHeader present?:", Boolean(authHeader));
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Unauthorized" });
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.slice("Bearer ".length).trim();
+      console.log("[AUTH] token source: Bearer");
     }
 
-    const token = authHeader.slice("Bearer ".length);
+    // 2️⃣ Fallback to cookie (browser)
+    if (!token) {
+      // if cookie-parser is used
+      token = (req as any).cookies?.access_token;
+
+      // fallback without cookie-parser
+      if (!token && req.headers.cookie) {
+        const match = req.headers.cookie.match(
+          /(?:^|;\s*)access_token=([^;]+)/
+        );
+        if (match) token = decodeURIComponent(match[1]);
+      }
+
+      if (token) console.log("[AUTH] token source: Cookie");
+    }
+
+    // ❌ No token anywhere
+    if (!token) {
+      console.log("[AUTH] ❌ no token found");
+      return res.status(401).json({ message: "Unauthorized" });
+    }
 
     try {
       const secret = getJwtSecret();
       console.log(
-        "[AUTH] verify Bearer secretLen:",
+        "[AUTH] verify secretLen:",
         secret.length,
         "token:",
         mask(token)
@@ -92,7 +116,11 @@ export function requireAuth(roles?: Roles[]) {
         return res.status(401).json({ message: "Invalid token type" });
       }
 
-      req.auth = { userId: String(decoded.userId), roles: decoded.roles };
+      req.auth = {
+        userId: String(decoded.userId),
+        roles: decoded.roles || [],
+      };
+
       console.log(
         "[AUTH] verified token for userId:",
         req.auth.userId,
@@ -100,19 +128,24 @@ export function requireAuth(roles?: Roles[]) {
         req.auth.roles
       );
 
+      // 🔐 Role check
       if (roles && roles.length) {
-        const has =
+        const hasRole =
           decoded.roles && roles.some((r) => decoded.roles.includes(r));
-        if (!has) return res.status(403).json({ message: "Forbidden" });
+        if (!hasRole) {
+          console.log("[AUTH] ❌ role mismatch");
+          return res.status(403).json({ message: "Forbidden" });
+        }
       }
 
       return next();
     } catch (err: any) {
-      console.log("[AUTH] ❌ Bearer verify failed:", err?.message);
+      console.log("[AUTH] ❌ verify failed:", err?.message);
       return res.status(401).json({ message: "Invalid or expired token" });
     }
   };
 }
+
 
 export default {
   requireAuth,

@@ -80,4 +80,28 @@ export class UserController {
     const userData = await this.service.getUserDetails(Number(userId));
     res.status(200).json({ message: "ok", data: userData });
   }
+
+  @ControllerError()
+  async getBillingDetails(req: AuthRequest, res: Response): Promise<void> {
+    const userId = Number(req.auth!.userId);
+
+    const data = await this.service.getBillingDetails(userId);
+
+    res.status(200).json({
+      message: "Fetched billing details",
+      data: data ?? null,
+    });
+  }
+
+  @ControllerError()
+  async updateBillingDetails(req: AuthRequest, res: Response): Promise<void> {
+    const userId = Number(req.auth!.userId);
+
+    const updated = await this.service.upsertBillingDetails(userId, req.body ?? {});
+
+    res.status(200).json({
+      message: "Billing details updated",
+      data: updated,
+    });
+  }
 }

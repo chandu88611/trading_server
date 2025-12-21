@@ -4,11 +4,13 @@ import { User } from "../../../entity/User";
 import { AuthProvider } from "../../../entity/AuthProvider";
 import { RefreshToken } from "../../../entity/RefreshToken";
 import { HttpStatusCode } from "../../../types/constants";
+import { UserBillingDetails } from "../../../entity/UserBillingDetails";
 
 export class UserDBService {
   private userRepo = AppDataSource.getRepository(User);
   private authRepo = AppDataSource.getRepository(AuthProvider);
   private tokenRepo = AppDataSource.getRepository(RefreshToken);
+  private billingRepo = AppDataSource.getRepository(UserBillingDetails);
 
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepo.findOne({ where: { email } });
@@ -143,4 +145,55 @@ export class UserDBService {
           throw error;
         }
     }
+    async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
+    try {
+      return this.billingRepo.findOne({
+        where: { userId: String(userId) },
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async upsertBillingDetails(
+    userId: number,
+    payload: Partial<UserBillingDetails>
+  ): Promise<UserBillingDetails> {
+    try {
+      const existing = await this.billingRepo.findOne({
+        where: { userId: String(userId) },
+      });
+
+      if (existing) {
+        // update only provided fields (don’t wipe with undefined)
+        Object.entries(payload).forEach(([k, v]) => {
+          if (v !== undefined) (existing as any)[k] = v;
+        });
+
+        // never allow changing userId
+        (existing as any).userId = String(userId);
+
+        return this.billingRepo.save(existing);
+      }
+
+      const created = this.billingRepo.create({
+        userId: String(userId),
+        panNumber: payload.panNumber ?? null,
+        accountHolderName: payload.accountHolderName ?? null,
+        accountNumber: payload.accountNumber ?? null,
+        ifscCode: payload.ifscCode ?? null,
+        bankName: payload.bankName ?? null,
+        branch: payload.branch ?? null,
+        addressLine1: payload.addressLine1 ?? null,
+        addressLine2: payload.addressLine2 ?? null,
+        city: payload.city ?? null,
+        state: payload.state ?? null,
+        pincode: payload.pincode ?? null,
+      });
+
+      return this.billingRepo.save(created);
+    } catch (error) {
+      throw error;
+    }
+  }
 }
