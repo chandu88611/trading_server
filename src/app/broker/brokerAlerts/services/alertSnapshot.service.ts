@@ -7,7 +7,11 @@ import { BrokerJobService } from "../../brokerJobs/services/brokerJob.service";
 import { ICreateTradeSignal } from "../../brokerSignals/interfaces/tradeSignal.interface";
 import { TradeSignalService } from "../../brokerSignals/services/tradeSignal.service";
 import { AlertSnapshotDB } from "../db/alertSnapshot.db";
-import { ICreateAlertSnapshot } from "../interfaces/alertSnapshot.interface";
+import {
+  HistoryQuery,
+  ICreateAlertSnapshot,
+  TimelineQuery,
+} from "../interfaces/alertSnapshot.interface";
 
 export class AlertSnapshotService {
   private alertSnapshotDB: AlertSnapshotDB;
@@ -97,6 +101,62 @@ export class AlertSnapshotService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async getAlertHistory(userId: number, q: HistoryQuery) {
+    if (!userId) {
+      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+    }
+
+    const page = Math.max(1, Number(q.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(q.limit || 20)));
+
+    // resolve time window
+    const { from, to } = this.resolveTimeWindow(q.from, q.to, q.lastMinutes);
+
+    return this.alertSnapshotDB.getHistory({
+      userId,
+      page,
+      limit,
+      ticker: q.ticker,
+      exchange: q.exchange,
+      interval: q.interval,
+      jobId: q.jobId,
+      from,
+      to,
+    });
+  }
+
+  async getAlertTimeline(userId: number, q: TimelineQuery) {
+    if (!userId) {
+      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+    }
+
+    const { from, to } = this.resolveTimeWindow(q.from, q.to, q.lastMinutes);
+
+    return this.alertSnapshotDB.getTimeline({
+      userId,
+      bucket: q.bucket || "15m",
+      ticker: q.ticker,
+      exchange: q.exchange,
+      interval: q.interval,
+      jobId: q.jobId,
+      from,
+      to,
+    });
+  }
+
+  private resolveTimeWindow(from?: string, to?: string, lastMinutes?: number) {
+    if (lastMinutes && lastMinutes > 0) {
+      const end = new Date();
+      const start = new Date(Date.now() - lastMinutes * 60 * 1000);
+      return { from: start, to: end };
+    }
+
+    const end = to ? new Date(to) : new Date();
+    const start = from ? new Date(from) : new Date(Date.now() - 60 * 60 * 1000); // default last 1 hour
+
+    return { from: start, to: end };
   }
 
   async listByJob(jobId: number) {

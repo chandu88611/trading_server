@@ -10,6 +10,13 @@ router.post(
   requireAuth([Roles.USER, Roles.ADMIN]),
   ctrl.create.bind(ctrl)
 );
+
+router.get(
+  "/history",
+  requireAuth([Roles.USER, Roles.ADMIN]),
+  ctrl.getHistory.bind(ctrl)
+);
+
 router.get(
   "/job/:jobId",
   requireAuth([Roles.USER, Roles.ADMIN]),
