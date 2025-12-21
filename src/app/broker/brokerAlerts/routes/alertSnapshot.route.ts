@@ -18,6 +18,12 @@ router.get(
 );
 
 router.get(
+  "/timeline",
+  requireAuth([Roles.USER, Roles.ADMIN]),
+  ctrl.getTimeline.bind(ctrl)
+);
+
+router.get(
   "/job/:jobId",
   requireAuth([Roles.USER, Roles.ADMIN]),
   ctrl.listByJob.bind(ctrl)
