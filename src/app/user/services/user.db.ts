@@ -128,24 +128,32 @@ export class UserDBService {
     );
   }
 
-    async getUserDetails(userId: number): Promise<User> {
-      try{let userData:User|null = await this.userRepo.findOne({
+  async getUserDetails(userId: number): Promise<User> {
+    try {
+      let userData: User | null = await this.userRepo.findOne({
         where: { id: userId },
-        select: ["id", "email", "name", "isEmailVerified", "isActive", "isAdmin"],
+        select: [
+          "id",
+          "email",
+          "name",
+          "isEmailVerified",
+          "isActive",
+          "isAdmin",
+        ],
       });
       if (!userData) {
-        throw{
+        throw {
           statusCode: HttpStatusCode._BAD_REQUEST,
-          message: "user_not_found"
-        }
+          message: "user_not_found",
+        };
       } else {
         return userData;
-        }}
-        catch (error) {
-          throw error;
-        }
+      }
+    } catch (error) {
+      throw error;
     }
-    async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
+  }
+  async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
     try {
       return this.billingRepo.findOne({
         where: { userId: String(userId) },
@@ -192,6 +200,22 @@ export class UserDBService {
       });
 
       return this.billingRepo.save(created);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async updateTradeStatus(userId: number, allowTrade: boolean): Promise<User> {
+    try {
+      const user = await this.userRepo.findOne({ where: { id: userId } });
+      if (!user) {
+        throw {
+          statusCode: HttpStatusCode._BAD_REQUEST,
+          message: "user_not_found",
+        };
+      }
+      user.allowTrade = allowTrade;
+      return this.userRepo.save(user);
     } catch (error) {
       throw error;
     }

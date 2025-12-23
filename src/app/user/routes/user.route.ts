@@ -40,6 +40,12 @@ export class UserRouter {
       userController.updateBillingDetails.bind(userController)
     );
 
+        this.userRoutes.put(
+      "/trade-status",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.updateTradeStatus.bind(userController)
+    );
+
 
     this.userRoutes.get(
       "/me",

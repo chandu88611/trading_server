@@ -97,11 +97,35 @@ export class UserController {
   async updateBillingDetails(req: AuthRequest, res: Response): Promise<void> {
     const userId = Number(req.auth!.userId);
 
-    const updated = await this.service.upsertBillingDetails(userId, req.body ?? {});
+    const updated = await this.service.upsertBillingDetails(
+      userId,
+      req.body ?? {}
+    );
 
     res.status(200).json({
       message: "Billing details updated",
       data: updated,
+    });
+  }
+
+  @ControllerError()
+  async updateTradeStatus(req: AuthRequest, res: Response): Promise<void> {
+    const userId = Number(req.auth!.userId);
+    const { allowTrade } = req.body;
+
+    if (typeof allowTrade !== "boolean") {
+      res.status(400).json({ message: "allowTrade must be a boolean" });
+      return;
+    }
+
+    const updatedUser = await this.service.updateTradeStatus(
+      userId,
+      allowTrade
+    );
+
+    res.status(200).json({
+      message: "Trade status updated",
+      data: { id: updatedUser.id, allowTrade: updatedUser.allowTrade },
     });
   }
 }

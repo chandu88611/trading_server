@@ -182,4 +182,12 @@ async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
     }
   }
 
+  async updateTradeStatus(userId: number, allowTrade: boolean): Promise<User> {
+    try {
+      return this.db.updateTradeStatus(userId, allowTrade);
+    } catch (error) {
+      throw error;
+    }
+  }
+
 }

@@ -32,6 +32,13 @@ export class User {
   isEmailVerified!: boolean;
 
   @Column({
+    name: "allow_trade",
+    type: "boolean",
+    default: true,
+  })
+  allowTrade!: boolean;
+
+  @Column({
     name: "is_active",
     type: "boolean",
     default: true,

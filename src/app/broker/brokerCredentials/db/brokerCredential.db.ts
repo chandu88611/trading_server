@@ -1,7 +1,10 @@
 import AppDataSource from "../../../../db/data-source";
 import { Repository } from "typeorm";
 import { BrokerCredential, User } from "../../../../entity";
-import { ICreateBrokerCredential, IUpdateBrokerCredential } from "../interfaces/brokerCredential.interface";
+import {
+  ICreateBrokerCredential,
+  IUpdateBrokerCredential,
+} from "../interfaces/brokerCredential.interface";
 import { HttpStatusCode } from "../../../../types/constants";
 
 export class BrokerCredentialDB {
@@ -12,14 +15,25 @@ export class BrokerCredentialDB {
     this.repo = AppDataSource.getRepository(BrokerCredential);
     this.userRepo = AppDataSource.getRepository(User);
   }
-  async getCredentialIdByUserId(userId: number):Promise<number>{
+  async getCredentialIdByUserId(userId: number): Promise<number> {
     try {
-      const credential = await this.repo.findOne({ where: { user: { id: userId } } });
-      if (!credential){
-        throw{
+      let userTradeStatus = await this.userRepo.findOne({
+        where: { id: userId },
+      });
+      if (!userTradeStatus || !userTradeStatus.allowTrade) {
+        throw {
           statusCode: HttpStatusCode._BAD_REQUEST,
-          message: "credential_not_found"
-        }
+          message: "trading_access_disabled",
+        };
+      }
+      const credential = await this.repo.findOne({
+        where: { user: { id: userId } },
+      });
+      if (!credential) {
+        throw {
+          statusCode: HttpStatusCode._BAD_REQUEST,
+          message: "credential_not_found",
+        };
       }
       return credential.id;
     } catch (error) {
@@ -46,17 +60,23 @@ export class BrokerCredentialDB {
   }
 
   async listByUser(userId: number) {
-    return this.repo.find({ where: { user: { id: userId } }, order: { createdAt: "DESC" } });
+    return this.repo.find({
+      where: { user: { id: userId } },
+      order: { createdAt: "DESC" },
+    });
   }
 
   async update(id: number, payload: IUpdateBrokerCredential) {
-    await this.repo.update({ id }, {
-      keyName: payload.keyName,
-      encApiKey: payload.encApiKey,
-      encApiSecret: payload.encApiSecret,
-      encRequestToken: payload.encRequestToken,
-      status: payload.status,
-    });
+    await this.repo.update(
+      { id },
+      {
+        keyName: payload.keyName,
+        encApiKey: payload.encApiKey,
+        encApiSecret: payload.encApiSecret,
+        encRequestToken: payload.encRequestToken,
+        status: payload.status,
+      }
+    );
     return this.getById(id);
   }
 
