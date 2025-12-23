@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { PaymentController } from "../controller/payment.controller";
 import { requireAuth, Roles } from "../../../middleware/auth";
-import { stripeRawBody } from "../../../middleware/stripeRawBody";
+import { razorpayRawBody } from "../../../middleware/razorpayRawBody";
 
 export class PaymentRouter {
   private router: Router;
@@ -21,22 +21,28 @@ export class PaymentRouter {
     );
 
     this.router.post(
-      "/stripe/webhook",
-      stripeRawBody,           
+      "/subscription/verify",
+      requireAuth([Roles.USER]),
+      ctrl.verifyPayment.bind(ctrl)
+    );
+
+    this.router.post(
+      "/razorpay/webhook",
+      razorpayRawBody,
       ctrl.webhook.bind(ctrl)
     );
 
-      this.router.get(
-    "/subscription/current",
-    requireAuth([Roles.USER]),
-    ctrl.getCurrentSubscription.bind(ctrl)
-  );
+    this.router.get(
+      "/subscription/current",
+      requireAuth([Roles.USER]),
+      ctrl.getCurrentSubscription.bind(ctrl)
+    );
 
-  this.router.post(
-    "/subscription/cancel",
-    requireAuth([Roles.USER]),
-    ctrl.cancelSubscription.bind(ctrl)
-  );
+    this.router.post(
+      "/subscription/cancel",
+      requireAuth([Roles.USER]),
+      ctrl.cancelSubscription.bind(ctrl)
+    );
   }
 
   getRouter() {
