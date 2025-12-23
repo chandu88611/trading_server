@@ -139,6 +139,9 @@ export class UserDBService {
           "isEmailVerified",
           "isActive",
           "isAdmin",
+          "allowTrade",
+          "createdAt",
+          "updatedAt",
         ],
       });
       if (!userData) {
