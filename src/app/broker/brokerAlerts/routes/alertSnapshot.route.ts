@@ -24,6 +24,12 @@ router.get(
 );
 
 router.get(
+  "/jobs/open",
+  requireAuth([Roles.USER, Roles.ADMIN]),
+  ctrl.getOpenJobs.bind(ctrl)
+);
+
+router.get(
   "/job/:jobId",
   requireAuth([Roles.USER, Roles.ADMIN]),
   ctrl.listByJob.bind(ctrl)

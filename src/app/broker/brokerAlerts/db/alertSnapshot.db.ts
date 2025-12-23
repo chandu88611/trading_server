@@ -4,6 +4,8 @@ import { ICreateAlertSnapshot } from "../interfaces/alertSnapshot.interface";
 import { AlertSnapshot } from "../../../../entity/AlertSnapshots";
 import { BrokerJob } from "../../../../entity";
 
+const OPEN_STATUSES = ["pending", "running", "queued"];
+
 export class AlertSnapshotDB {
   private repo: Repository<AlertSnapshot>;
   private jobRepo: Repository<BrokerJob>;
@@ -50,8 +52,6 @@ export class AlertSnapshotDB {
       order: { createdAt: "DESC" },
     });
   }
-
-  // alertSnapshot.db.ts
 
   async getHistory(q: {
     userId: number;
@@ -190,6 +190,69 @@ export class AlertSnapshotDB {
         return `date_trunc('day', ${column})`;
       default:
         return `date_trunc('minute', ${column})`;
+    }
+  }
+
+  async getOpenJobs(
+    userId: number,
+    q: { page: number; limit: number; type?: string }
+  ) {
+    try {
+      const page = Math.max(1, q.page || 1);
+      const limit = Math.min(100, Math.max(1, q.limit || 20));
+      const offset = (page - 1) * limit;
+
+      const base = AppDataSource.createQueryBuilder()
+        .from("broker_jobs", "j")
+        .innerJoin("broker_credentials", "c", "c.id = j.credential_id")
+        .where("c.user_id = :userId", { userId })
+        .andWhere("j.status = ANY(:openStatuses)", {
+          openStatuses: OPEN_STATUSES,
+        });
+
+      if (q.type) base.andWhere("j.type = :type", { type: q.type });
+
+      const totalRow = await base
+        .clone()
+        .select("COUNT(*)::int", "total")
+        .getRawOne();
+      const total = Number(totalRow?.total ?? 0);
+
+      const rows = await base
+        .clone()
+        .select([
+          "j.id as id",
+          "j.type as type",
+          "j.status as status",
+          "j.attempts as attempts",
+          "j.last_error as lastError",
+          "j.payload as payload",
+          "j.created_at as createdAt",
+          "j.updated_at as updatedAt",
+          "a.id as lastAlertId",
+          "a.ticker as lastTicker",
+          "a.exchange as lastExchange",
+          "a.close as lastClose",
+          "a.created_at as lastAlertAt",
+        ])
+        .leftJoin(
+          (qb) =>
+            qb
+              .from("alert_snapshots", "a")
+              .where("a.job_id = j.id")
+              .orderBy("a.created_at", "DESC")
+              .limit(1),
+          "a",
+          "TRUE"
+        )
+        .orderBy("j.updated_at", "DESC")
+        .offset(offset)
+        .limit(limit)
+        .getRawMany();
+
+      return { page, limit, total, rows };
+    } catch (error) {
+      throw error;
     }
   }
 }

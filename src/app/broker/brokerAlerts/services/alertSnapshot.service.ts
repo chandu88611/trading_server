@@ -162,4 +162,15 @@ export class AlertSnapshotService {
   async listByJob(jobId: number) {
     return this.alertSnapshotDB.listByJob(jobId);
   }
+
+  async getOpenJobs(
+    userId: number,
+    q: { page: number; limit: number; type?: string }
+  ) {
+    try {
+      return this.alertSnapshotDB.getOpenJobs(userId, q);
+    } catch (error) {
+      throw error;
+    }
+  }
 }
