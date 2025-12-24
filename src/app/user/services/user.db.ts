@@ -223,4 +223,23 @@ export class UserDBService {
       throw error;
     }
   }
+
+  async updateCopyTradeStatus(
+    userId: number,
+    allowCopyTrade: boolean
+  ): Promise<User> {
+    try {
+      const user = await this.userRepo.findOne({ where: { id: userId } });
+      if (!user) {
+        throw {
+          statusCode: HttpStatusCode._BAD_REQUEST,
+          message: "user_not_found",
+        };
+      }
+      user.allowCopyTrade = allowCopyTrade;
+      return this.userRepo.save(user);
+    } catch (error) {
+      throw error;
+    }
+  }
 }

@@ -137,16 +137,12 @@ export class UserService {
     return { refreshJwt };
   }
 
-
   async verifyEmail(token: string): Promise<void> {
     if (!token) {
       throw new Error("Invalid token");
     }
 
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
     const user = await this.db.findByVerificationToken(tokenHash);
 
@@ -158,12 +154,12 @@ export class UserService {
   }
   async getUserDetails(userId: number): Promise<User> {
     try {
-          return this.db.getUserDetails(userId);
+      return this.db.getUserDetails(userId);
     } catch (error) {
-     throw error 
+      throw error;
     }
   }
-async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
+  async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
     try {
       return this.db.getBillingDetails(userId);
     } catch (error) {
@@ -190,4 +186,14 @@ async getBillingDetails(userId: number): Promise<UserBillingDetails | null> {
     }
   }
 
+  async updateCopyTradeStatus(
+    userId: number,
+    allowCopyTrade: boolean
+  ): Promise<User> {
+    try {
+      return this.db.updateCopyTradeStatus(userId, allowCopyTrade);
+    } catch (error) {
+      throw error;
+    }
+  }
 }

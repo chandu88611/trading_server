@@ -128,4 +128,25 @@ export class UserController {
       data: { id: updatedUser.id, allowTrade: updatedUser.allowTrade },
     });
   }
+
+  @ControllerError()
+  async updateCopyTradeStatus(req: AuthRequest, res: Response): Promise<void> {
+    const userId = Number(req.auth!.userId);
+    const { allowCopyTrade } = req.body;
+
+    if (typeof allowCopyTrade !== "boolean") {
+      res.status(400).json({ message: "allowCopyTrade must be a boolean" });
+      return;
+    }
+
+    const updatedUser = await this.service.updateCopyTradeStatus(
+      userId,
+      allowCopyTrade
+    );
+
+    res.status(200).json({
+      message: "Copy trade status updated",
+      data: { id: updatedUser.id, allowCopyTrade: updatedUser.allowCopyTrade },
+    });
+  }
 }

@@ -39,6 +39,13 @@ export class User {
   allowTrade!: boolean;
 
   @Column({
+    name: "allow_copy_trade",
+    type: "boolean",
+    default: true,
+  })
+  allowCopyTrade!: boolean;
+
+  @Column({
     name: "is_active",
     type: "boolean",
     default: true,

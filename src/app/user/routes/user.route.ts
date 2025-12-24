@@ -28,7 +28,7 @@ export class UserRouter {
       userController.verifyEmail.bind(userController)
     );
 
-     this.userRoutes.get(
+    this.userRoutes.get(
       "/billing",
       requireAuth([Roles.USER, Roles.ADMIN]),
       userController.getBillingDetails.bind(userController)
@@ -40,12 +40,17 @@ export class UserRouter {
       userController.updateBillingDetails.bind(userController)
     );
 
-        this.userRoutes.put(
+    this.userRoutes.put(
+      "/copy-trade-status",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.updateCopyTradeStatus.bind(userController)
+    );
+
+    this.userRoutes.put(
       "/trade-status",
       requireAuth([Roles.USER, Roles.ADMIN]),
       userController.updateTradeStatus.bind(userController)
     );
-
 
     this.userRoutes.get(
       "/me",
