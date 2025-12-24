@@ -3,7 +3,6 @@ import {
   IUserSubscribePayload,
   IUserSubscriptionCancelPayload,
 } from "../interfaces/userSubscription.interface";
-import { UserSubscriptionStatus } from "../enums/userSubscription.enum";
 import { AssetType } from "../../../types/trade-identify";
 
 export class UserSubscriptionService {

@@ -8,6 +8,7 @@ export enum Roles {
 
 const ACCESS_TOKEN_EXPIRES = "30d"; // keep short for access
 const REFRESH_TOKEN_EXPIRES = "15d";
+const WEBHOOK_TOKEN_EXPIRES = "365d";
 
 // ✅ Always read secret from env at runtime (not once at import)
 export function getJwtSecret() {
@@ -39,6 +40,26 @@ export function signAccessToken(payload: Record<string, any>) {
     "token:",
     mask(token)
   );
+  return token;
+}
+
+export function signWebhookToken(payload: Record<string, any>, expiresAt: Date) {
+  const secret = getJwtSecret();
+  const nowMs = Date.now();
+  const expMs = expiresAt.getTime();
+
+  const seconds = Math.max(1, Math.floor((expMs - nowMs) / 1000));
+  const token = jwt.sign({ ...payload, type: "webhook" }, secret, {
+    expiresIn: seconds,
+  });
+
+  console.log(
+    "[JWT] signWebhookToken secretLen:",
+    secret.length,
+    "token:",
+    mask(token)
+  );
+
   return token;
 }
 
@@ -142,6 +163,59 @@ export function requireAuth(roles?: Roles[]) {
     } catch (err: any) {
       console.log("[AUTH] ❌ verify failed:", err?.message);
       return res.status(401).json({ message: "Invalid or expired token" });
+    }
+  };
+}
+
+export interface WebhookAuthRequest extends Request {
+  webhookAuth?: {
+    userId: string;
+    subscriptionId?: string;
+    planId?: string;
+  };
+}
+
+export function requireWebhookAuth() {
+  return (req: WebhookAuthRequest, res: Response, next: NextFunction) => {
+    console.log("[WEBHOOK_AUTH]", req.method, req.originalUrl);
+
+    const token =
+      (req.headers["x-webhook-token"] as string | undefined) ||
+      (req.query.token as string | undefined) ||
+      (req.body?.token as string | undefined) ||
+      (req.body?.webhook_token as string | undefined);
+
+    if (!token) {
+      console.log("[WEBHOOK_AUTH] ❌ no token found");
+      return res.status(401).json({ message: "Webhook token missing" });
+    }
+
+    try {
+      const secret = getJwtSecret();
+      console.log(
+        "[WEBHOOK_AUTH] verify secretLen:",
+        secret.length,
+        "token:",
+        mask(token)
+      );
+
+      const decoded = jwt.verify(token, secret) as any;
+
+      if (decoded.type !== "webhook") {
+        return res.status(401).json({ message: "Invalid webhook token type" });
+      }
+
+      req.webhookAuth = {
+        userId: String(decoded.userId),
+        subscriptionId: decoded.subscriptionId ? String(decoded.subscriptionId) : undefined,
+        planId: decoded.planId ? String(decoded.planId) : undefined,
+      };
+
+      console.log("[WEBHOOK_AUTH] ✅ userId:", req.webhookAuth.userId);
+      return next();
+    } catch (err: any) {
+      console.log("[WEBHOOK_AUTH] ❌ verify failed:", err?.message);
+      return res.status(401).json({ message: "Invalid or expired webhook token" });
     }
   };
 }
