@@ -21,6 +21,7 @@ import { CopyMasterEvent } from "../entity/CopyMasterEvent";
 import { CopyTradeTask } from "../entity/CopyTradeTask";
 import { CopyTradingFollow } from "../entity/CopyTradingFollow";
 import { CopyTradingMaster } from "../entity/CopyTradingMaster";
+import { UserTradingAccount } from "../entity/UserTradingAccount";
 
 dotenv.config();
 
@@ -50,6 +51,7 @@ export const AppDataSource = new DataSource({
     TradeSignal,
     UserSubscription,
     UserBillingDetails,
+    UserTradingAccount,
     CopyMasterEvent,
     CopyTradeTask,
     CopyTradingFollow,
