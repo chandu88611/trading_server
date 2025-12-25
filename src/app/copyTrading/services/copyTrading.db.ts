@@ -102,7 +102,6 @@ export class CopyTradingDBService {
     const manager = this.mgr(qr);
     const repo = manager.getRepository(CopyMasterEvent);
 
-    // ✅ NO `as any` — use DeepPartial so TS chooses single-entity overload
     const data: DeepPartial<CopyMasterEvent> = {
       masterId: args.masterId,
       eventType: args.eventType,
@@ -118,14 +117,11 @@ export class CopyTradingDBService {
       payload: args.payload ?? {},
     };
 
-    const ev = repo.create(data); // CopyMasterEvent (single)
-    const saved = await repo.save(ev); // CopyMasterEvent (single)
+    const ev = repo.create(data);
+    const saved = await repo.save(ev);
     return saved;
   }
 
-  /**
-   * Eligible active follows for this master and symbol.
-   */
   async getEligibleFollows(masterId: number, symbol: string, qr?: QueryRunner) {
     const manager = this.mgr(qr);
 
