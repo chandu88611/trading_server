@@ -57,7 +57,7 @@ export class CopyTradingController {
       requiresApproval: Boolean((req.body as any)?.requiresApproval),
     });
 
-    res.status(HttpStatusCode._SUCCESS).json(out);
+    return res.status(HttpStatusCode._SUCCESS).json(out);
   }
 
   /**
@@ -73,7 +73,7 @@ export class CopyTradingController {
     }
 
     const out = await this.service.getMyMaster(Number(userId));
-    res.status(HttpStatusCode._SUCCESS).json(out);
+    return res.status(HttpStatusCode._SUCCESS).json(out);
   }
   @ControllerError()
   async listMasters(req: Request, res: Response) {
@@ -136,7 +136,7 @@ export class CopyTradingController {
       symbolWhitelist: (req.body as any)?.symbolWhitelist,
     });
 
-    res.status(HttpStatusCode._SUCCESS).json(out);
+    return res.status(HttpStatusCode._SUCCESS).json(out);
   }
 
   @ControllerError()
@@ -196,7 +196,7 @@ export class CopyTradingController {
       symbolWhitelist: (req.body as any)?.symbolWhitelist,
     });
 
-    res.status(HttpStatusCode._SUCCESS).json(out);
+    return res.status(HttpStatusCode._SUCCESS).json(out);
   }
 
   @ControllerError()
@@ -224,7 +224,7 @@ export class CopyTradingController {
       status,
     });
 
-    res.status(HttpStatusCode._SUCCESS).json(out);
+    return res.status(HttpStatusCode._SUCCESS).json(out);
   }
 
   @ControllerError()
@@ -251,6 +251,6 @@ export class CopyTradingController {
       action: action as "approve" | "reject",
     });
 
-    res.status(HttpStatusCode._SUCCESS).json(out);
+    return res.status(HttpStatusCode._SUCCESS).json(out);
   }
 }
