@@ -80,8 +80,11 @@ export class CopyTradingDBService {
   // ---------------------------
 
   async getMyMaster(userId: number) {
-    // if no master exists, create default (needs verified account)
-    return this.getOrCreateDefaultMasterForUser(userId);
+    try {
+      return this.getOrCreateDefaultMasterForUser(userId);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async upsertMyMaster(
@@ -212,54 +215,58 @@ export class CopyTradingDBService {
     userId: number,
     qr?: QueryRunner
   ): Promise<CopyTradingMaster> {
-    const manager = this.mgr(qr);
+    try {
+      const manager = this.mgr(qr);
 
-    const existing = await manager
-      .getRepository(CopyTradingMaster)
-      .createQueryBuilder("m")
-      .where("m.ownerUserId = :userId", { userId })
-      .andWhere("m.sourceType = :st", {
-        st: CopyMasterSourceType.TRADING_ACCOUNT,
-      })
-      .andWhere("m.deletedAt IS NULL")
-      .orderBy("m.updatedAt", "DESC")
-      .getOne();
+      const existing = await manager
+        .getRepository(CopyTradingMaster)
+        .createQueryBuilder("m")
+        .where("m.ownerUserId = :userId", { userId })
+        .andWhere("m.sourceType = :st", {
+          st: CopyMasterSourceType.TRADING_ACCOUNT,
+        })
+        .andWhere("m.deletedAt IS NULL")
+        .orderBy("m.updatedAt", "DESC")
+        .getOne();
 
-    if (existing) return existing;
+      if (existing) return existing;
 
-    const acc = await manager
-      .getRepository(UserTradingAccount)
-      .createQueryBuilder("ta")
-      .leftJoin("ta.user", "u")
-      .where("u.id = :userId", { userId })
-      .andWhere("ta.status = :st", { st: TradingAccountStatus.VERIFIED })
-      .orderBy("ta.lastVerifiedAt", "DESC")
-      .addOrderBy("ta.createdAt", "DESC")
-      .getOne();
+      const acc = await manager
+        .getRepository(UserTradingAccount)
+        .createQueryBuilder("ta")
+        .leftJoin("ta.user", "u")
+        .where("u.id = :userId", { userId })
+        .andWhere("ta.status = :st", { st: TradingAccountStatus.VERIFIED })
+        .orderBy("ta.lastVerifiedAt", "DESC")
+        .addOrderBy("ta.createdAt", "DESC")
+        .getOne();
 
-    if (!acc) {
-      throw {
-        status: HttpStatusCode._BAD_REQUEST,
-        message: "no_verified_trading_account_for_master",
+      if (!acc) {
+        throw {
+          status: HttpStatusCode._BAD_REQUEST,
+          message: "no_verified_trading_account_for_master",
+        };
+      }
+
+      const masterRepo = manager.getRepository(CopyTradingMaster);
+
+      const data: DeepPartial<CopyTradingMaster> = {
+        ownerUserId: userId as any,
+        sourceType: CopyMasterSourceType.TRADING_ACCOUNT,
+        sourceTradingAccountId: acc.id as any,
+        name: `Master-${userId}`,
+        description: null,
+        visibility: "private" as any,
+        requiresApproval: false,
+        isActive: true,
+        metadata: {},
       };
+
+      const created = masterRepo.create(data);
+      return await masterRepo.save(created);
+    } catch (error) {
+      throw error;
     }
-
-    const masterRepo = manager.getRepository(CopyTradingMaster);
-
-    const data: DeepPartial<CopyTradingMaster> = {
-      ownerUserId: userId as any,
-      sourceType: CopyMasterSourceType.TRADING_ACCOUNT,
-      sourceTradingAccountId: acc.id as any,
-      name: `Master-${userId}`,
-      description: null,
-      visibility: "private" as any,
-      requiresApproval: false,
-      isActive: true,
-      metadata: {},
-    };
-
-    const created = masterRepo.create(data);
-    return await masterRepo.save(created);
   }
 
   // ---------------------------
