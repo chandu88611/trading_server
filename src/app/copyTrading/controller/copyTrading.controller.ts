@@ -64,7 +64,7 @@ export class CopyTradingController {
    * Get my master profile (create default if needed)
    */
   @ControllerError()
-  async getMyMaster(req: Request, res: Response) {
+  async getMyMaster(req: AuthRequest, res: Response) {
     const userId = getUserId(req);
     console.log("userId **********", userId);
     if (!userId) {
