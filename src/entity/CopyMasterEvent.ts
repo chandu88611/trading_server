@@ -24,10 +24,10 @@ export enum CopyTradeSide {
 @Entity({ name: "copy_master_events" })
 export class CopyMasterEvent {
   @PrimaryGeneratedColumn("increment", { type: "bigint" })
-  id!: string;
+  id!: number;
 
   @Column({ name: "master_id", type: "bigint" })
-  masterId!: string;
+  masterId!: number;
 
   @ManyToOne(() => CopyTradingMaster, { onDelete: "CASCADE" })
   @JoinColumn({ name: "master_id" })

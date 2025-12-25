@@ -98,11 +98,12 @@ export class CopyTradingDBService {
       payload?: Record<string, any>;
     },
     qr?: QueryRunner
-  ) {
+  ): Promise<CopyMasterEvent> {
     const manager = this.mgr(qr);
     const repo = manager.getRepository(CopyMasterEvent);
 
-    const ev = repo.create({
+    // ✅ NO `as any` — use DeepPartial so TS chooses single-entity overload
+    const data: DeepPartial<CopyMasterEvent> = {
       masterId: args.masterId,
       eventType: args.eventType,
       symbol: args.symbol,
@@ -115,9 +116,11 @@ export class CopyTradingDBService {
       masterOrderRef: args.masterOrderRef ?? null,
       masterPositionRef: null,
       payload: args.payload ?? {},
-    } as any);
+    };
 
-    return await repo.save(ev);
+    const ev = repo.create(data); // CopyMasterEvent (single)
+    const saved = await repo.save(ev); // CopyMasterEvent (single)
+    return saved;
   }
 
   /**
