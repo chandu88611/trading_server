@@ -16,45 +16,45 @@ export class CopyTradingRouter {
     this.router.get(
       "/master/me",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.getMyMaster
+      controller.getMyMaster.bind(controller)
     );
     this.router.post(
       "/master",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.upsertMyMaster
+      controller.upsertMyMaster.bind(controller)
     );
 
     this.router.get(
       "/masters",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.listMasters
+      controller.listMasters.bind(controller)
     );
 
     this.router.post(
       "/follow",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.followMaster
+      controller.followMaster.bind(controller)
     );
     this.router.get(
       "/follows/me",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.listMyFollows
+      controller.listMyFollows.bind(controller)
     );
     this.router.patch(
       "/follows/:followId",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.updateMyFollow
+      controller.updateMyFollow.bind(controller)
     );
 
     this.router.get(
       "/followers/me",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.listMyFollowers
+      controller.listMyFollowers.bind(controller)
     );
     this.router.patch(
       "/followers/:followId/decision",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      controller.decideFollowerRequest
+      controller.decideFollowerRequest.bind(controller)
     );
   }
 

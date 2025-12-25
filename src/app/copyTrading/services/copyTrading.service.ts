@@ -5,7 +5,9 @@ import { CopyTradingDBService } from "./copyTrading.db";
 import { CopyEventType, CopyTradeSide } from "../../../entity/CopyMasterEvent";
 
 function normalizeAction(action?: string) {
-  return String(action || "").trim().toUpperCase();
+  return String(action || "")
+    .trim()
+    .toUpperCase();
 }
 
 function mapToCopyEvent(action?: string): {
@@ -19,8 +21,10 @@ function mapToCopyEvent(action?: string): {
   if (a === "SELL" || a === "SHORT")
     return { eventType: CopyEventType.OPEN, side: CopyTradeSide.SELL };
 
-  if (a.includes("CLOSE")) return { eventType: CopyEventType.CLOSE, side: null };
-  if (a.includes("MODIFY")) return { eventType: CopyEventType.MODIFY, side: null };
+  if (a.includes("CLOSE"))
+    return { eventType: CopyEventType.CLOSE, side: null };
+  if (a.includes("MODIFY"))
+    return { eventType: CopyEventType.MODIFY, side: null };
   if (a.includes("PARTIAL"))
     return { eventType: CopyEventType.PARTIAL_CLOSE, side: null };
 
@@ -39,9 +43,14 @@ export class CopyTradingService {
   // ---------------------------
 
   async getMyMaster(userId: number) {
-    console.log("GET MY MASTER USER ID", userId);
-    if (!userId) throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-    return this.dbService.getMyMaster(userId);
+    try {
+      console.log("GET MY MASTER USER ID", userId);
+      if (!userId)
+        throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+      return this.dbService.getMyMaster(userId);
+    } catch (error) {
+      throw error;
+    }
   }
 
   async listMasters(args: {
@@ -89,9 +98,13 @@ export class CopyTradingService {
     visibility?: "private" | "unlisted" | "public";
     requiresApproval?: boolean;
   }) {
-    if (!args.userId) throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+    if (!args.userId)
+      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
     if (!args.tradingAccountId)
-      throw { status: HttpStatusCode._BAD_REQUEST, message: "tradingAccountId_required" };
+      throw {
+        status: HttpStatusCode._BAD_REQUEST,
+        message: "tradingAccountId_required",
+      };
 
     const qr = AppDataSource.createQueryRunner();
     await qr.connect();
@@ -163,7 +176,10 @@ export class CopyTradingService {
     if (!args.followerUserId)
       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
     if (!args.followId)
-      throw { status: HttpStatusCode._BAD_REQUEST, message: "followId_required" };
+      throw {
+        status: HttpStatusCode._BAD_REQUEST,
+        message: "followId_required",
+      };
 
     const qr = AppDataSource.createQueryRunner();
     await qr.connect();
@@ -188,7 +204,10 @@ export class CopyTradingService {
     if (!args.ownerUserId)
       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
     if (!args.followId)
-      throw { status: HttpStatusCode._BAD_REQUEST, message: "followId_required" };
+      throw {
+        status: HttpStatusCode._BAD_REQUEST,
+        message: "followId_required",
+      };
 
     const qr = AppDataSource.createQueryRunner();
     await qr.connect();
