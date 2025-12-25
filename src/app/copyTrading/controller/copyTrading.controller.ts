@@ -32,7 +32,8 @@ export class CopyTradingController {
     this.service = new CopyTradingService();
   }
 
-  upsertMyMaster = async (req: AuthRequest, res: Response) => {
+  @ControllerError()
+  async upsertMyMaster(req: AuthRequest, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -57,12 +58,13 @@ export class CopyTradingController {
     });
 
     res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 
   /**
    * Get my master profile (create default if needed)
    */
-  getMyMaster = async (req: Request, res: Response) => {
+  @ControllerError()
+  async getMyMaster(req: Request, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -72,9 +74,9 @@ export class CopyTradingController {
 
     const out = await this.service.getMyMaster(Number(userId));
     res.status(HttpStatusCode._SUCCESS).json(out);
-  };
-
-  listMasters = async (req: Request, res: Response) => {
+  }
+  @ControllerError()
+  async listMasters(req: Request, res: Response) {
     const userId = getUserId(req as any);
     const page = Math.max(1, toInt((req.query as any)?.page, 1));
     const limit = Math.min(
@@ -95,9 +97,10 @@ export class CopyTradingController {
     });
 
     return res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 
-  followMaster = async (req: Request, res: Response) => {
+  @ControllerError()
+  async followMaster(req: Request, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -134,9 +137,10 @@ export class CopyTradingController {
     });
 
     res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 
-  listMyFollows = async (req: Request, res: Response) => {
+  @ControllerError()
+  async listMyFollows(req: Request, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -161,9 +165,10 @@ export class CopyTradingController {
     });
 
     return res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 
-  updateMyFollow = async (req: Request, res: Response) => {
+  @ControllerError()
+  async updateMyFollow(req: Request, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -192,9 +197,10 @@ export class CopyTradingController {
     });
 
     res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 
-  listMyFollowers = async (req: Request, res: Response) => {
+  @ControllerError()
+  async listMyFollowers(req: Request, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -219,9 +225,10 @@ export class CopyTradingController {
     });
 
     res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 
-  decideFollowerRequest = async (req: Request, res: Response) => {
+  @ControllerError()
+  async decideFollowerRequest(req: Request, res: Response) {
     const userId = getUserId(req);
     if (!userId) {
       return res
@@ -245,5 +252,5 @@ export class CopyTradingController {
     });
 
     res.status(HttpStatusCode._SUCCESS).json(out);
-  };
+  }
 }
