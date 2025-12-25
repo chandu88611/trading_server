@@ -65,7 +65,6 @@ export class CopyTradingController {
   @ControllerError()
   async getMyMaster(req: AuthRequest, res: Response) {
     const userId = getUserId(req);
-    console.log("USER ID", userId);
     if (!userId) {
       return res
         .status(HttpStatusCode._UNAUTHORISED)

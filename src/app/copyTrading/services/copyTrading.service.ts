@@ -39,6 +39,7 @@ export class CopyTradingService {
   // ---------------------------
 
   async getMyMaster(userId: number) {
+    console.log("GET MY MASTER USER ID", userId);
     if (!userId) throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
     return this.dbService.getMyMaster(userId);
   }
