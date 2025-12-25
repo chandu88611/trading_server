@@ -1,6 +1,7 @@
 import AppDataSource from "../../../../db/data-source";
 import { HttpStatusCode } from "../../../../types/constants";
 import { AssetClassifier, AssetType } from "../../../../types/trade-identify";
+import { CopyTradingService } from "../../../copyTrading/services/copyTrading.service";
 import { UserSubscriptionService } from "../../../userSubscription/services/userSubscription";
 import { BrokerCredentialService } from "../../brokerCredentials/services/brokerCredential.service";
 import { BrokerJobService } from "../../brokerJobs/services/brokerJob.service";
@@ -19,12 +20,14 @@ export class AlertSnapshotService {
   private brokerCredentialService: BrokerCredentialService;
   private tradeSignalService: TradeSignalService;
   private userSubscriptionService: UserSubscriptionService;
+  private copyTradingService: CopyTradingService;
   constructor() {
     this.alertSnapshotDB = new AlertSnapshotDB();
     this.brokerJobService = new BrokerJobService();
     this.brokerCredentialService = new BrokerCredentialService();
     this.tradeSignalService = new TradeSignalService();
     this.userSubscriptionService = new UserSubscriptionService();
+    this.copyTradingService = new CopyTradingService();
   }
   async create(payload: ICreateAlertSnapshot) {
     const queryRunner = AppDataSource.createQueryRunner();
@@ -84,6 +87,19 @@ export class AlertSnapshotService {
 
           await this.tradeSignalService.createTradeSignal(
             tradePayload,
+            queryRunner
+          );
+          await this.copyTradingService.fanoutFromMasterSignal(
+            {
+              userId: payload.userId,
+              brokerJobId: brockerJobId,
+              alertSnapshotId: alertData.id,
+              action: payload.action,
+              symbol: alertData.ticker,
+              exchange: alertData.exchange,
+              price: alertData.close,
+              signalTime: alertData.createdAt!,
+            },
             queryRunner
           );
           await queryRunner.commitTransaction();

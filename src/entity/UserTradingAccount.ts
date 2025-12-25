@@ -35,6 +35,9 @@ export class UserTradingAccount {
   })
   status!: TradingAccountStatus;
 
+  @Column({ type: "timestamptz", nullable: true })
+  lastVerifiedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 
