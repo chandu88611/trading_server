@@ -10,7 +10,6 @@ function toInt(v: any, fallback?: number) {
 }
 
 function getUserId(req: AuthRequest) {
-  const r: any = req as any;
   const userId = Number(req.auth!.userId);
   return userId && Number.isFinite(userId) ? userId : null;
 }
@@ -65,7 +64,6 @@ export class CopyTradingController {
    */
   @ControllerError()
   async getMyMaster(req: AuthRequest, res: Response) {
-    console.log("userId **********", req);
     const userId = getUserId(req);
     if (!userId) {
       return res
