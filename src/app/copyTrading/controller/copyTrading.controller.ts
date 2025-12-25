@@ -15,6 +15,16 @@ function getUserId(req: AuthRequest) {
   return userId && Number.isFinite(userId) ? userId : null;
 }
 
+type Visibility = "private" | "unlisted" | "public";
+
+function parseVisibility(v: any, fallback: Visibility = "public"): Visibility {
+  const s = String(v || "")
+    .trim()
+    .toLowerCase();
+  if (s === "private" || s === "unlisted" || s === "public") return s;
+  return fallback;
+}
+
 export class CopyTradingController {
   private service: CopyTradingService;
 
@@ -65,13 +75,17 @@ export class CopyTradingController {
   };
 
   listMasters = async (req: Request, res: Response) => {
-    const userId = getUserId(req);
+    const userId = getUserId(req as any);
     const page = Math.max(1, toInt((req.query as any)?.page, 1));
     const limit = Math.min(
       100,
       Math.max(1, toInt((req.query as any)?.limit, 20))
     );
-    const visibility = String((req.query as any)?.visibility || "public");
+
+    const visibility = parseVisibility(
+      (req.query as any)?.visibility,
+      "public"
+    );
 
     const out = await this.service.listMasters({
       viewerUserId: userId ? Number(userId) : undefined,
