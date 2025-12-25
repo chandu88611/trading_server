@@ -17,6 +17,10 @@ import {
 import { AlertSnapshot } from "../entity/AlertSnapshots";
 import { TradeSignal } from "../entity/TradeSignals";
 import { UserBillingDetails } from "../entity/UserBillingDetails";
+import { CopyMasterEvent } from "../entity/CopyMasterEvent";
+import { CopyTradeTask } from "../entity/CopyTradeTask";
+import { CopyTradingFollow } from "../entity/CopyTradingFollow";
+import { CopyTradingMaster } from "../entity/CopyTradingMaster";
 
 dotenv.config();
 
@@ -45,7 +49,11 @@ export const AppDataSource = new DataSource({
     SubscriptionPlan,
     TradeSignal,
     UserSubscription,
-    UserBillingDetails
+    UserBillingDetails,
+    CopyMasterEvent,
+    CopyTradeTask,
+    CopyTradingFollow,
+    CopyTradingMaster,
   ],
   migrations: [],
   subscribers: [],
