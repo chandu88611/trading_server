@@ -5,5 +5,5 @@ export enum BillingInterval {
 
 export enum ForexTradeCategory {
   MT5 = "MT5",
-  CTrader = "CTrader",
+  CTrader = "CTRADER",
 }

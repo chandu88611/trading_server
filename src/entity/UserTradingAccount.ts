@@ -5,6 +5,7 @@ import {
   ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
+  JoinColumn,
 } from "typeorm";
 import { User } from "./User";
 import { ExecutionFlow, TradingAccountStatus } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
@@ -13,19 +14,23 @@ export class UserTradingAccount {
   @PrimaryGeneratedColumn()
   id!: number;
 
+    @Column({ name: "user_id", type: "int" })
+  userId!: number;
+
   @ManyToOne(() => User, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "user_id" })
   user!: User;
 
   @Column()
   broker!: string;
 
-  @Column({ type: "enum", enum: ExecutionFlow })
+  @Column({ name:"execution_flow", type: "enum", enum: ExecutionFlow })
   executionFlow!: ExecutionFlow;
 
-  @Column({ nullable: true })
+  @Column({ name:"account_label", nullable: true })
   accountLabel!: string;
 
-  @Column({ type: "text" })
+  @Column({ name:"credentials_encrypted", type: "text" })
   credentialsEncrypted!: string;
 
   @Column({
@@ -35,12 +40,12 @@ export class UserTradingAccount {
   })
   status!: TradingAccountStatus;
 
-  @Column({ type: "timestamptz", nullable: true })
+  @Column({ name:"last_verified_at", type: "timestamptz", nullable: true })
   lastVerifiedAt!: Date | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({name: "created_at", type: "timestamptz"})
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({name: "updated_at", type: "timestamptz"})
   updatedAt!: Date;
 }
