@@ -23,6 +23,7 @@ import { CopyTradingFollow } from "../entity/CopyTradingFollow";
 import { CopyTradingMaster } from "../entity/CopyTradingMaster";
 import { UserTradingAccount } from "../entity/UserTradingAccount";
 import { Strategy } from "../entity/Strategy";
+import { ForexTraderUserDetails } from "../entity/ForexTraderUserDetails";
 
 dotenv.config();
 
@@ -58,6 +59,7 @@ export const AppDataSource = new DataSource({
     CopyTradingFollow,
     CopyTradingMaster,
     Strategy,
+    ForexTraderUserDetails
   ],
   migrations: [],
   subscribers: [],

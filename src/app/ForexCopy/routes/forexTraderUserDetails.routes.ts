@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { ForexTraderUserDetailsController } from "../controllers/forexTraderUserDetails.controller";
-import { requireAuth } from "../../../middleware/auth";
+import { requireAuth, Roles } from "../../../middleware/auth";
 
 export class ForexTraderUserDetailsRouter {
   private router = Router();
@@ -9,23 +9,23 @@ export class ForexTraderUserDetailsRouter {
   constructor() {
     this.router.put(
       "/me",
-      requireAuth,
+      requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.upsertMyDetails.bind(this.controller)
     );
     this.router.get(
       "/me",
-      requireAuth,
+      requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.getMyDetails.bind(this.controller)
     );
 
     this.router.patch(
       "/:id",
-      requireAuth,
+      requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.updateMyDetailById.bind(this.controller)
     );
     this.router.delete(
       "/:id",
-      requireAuth,
+      requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.deleteMyDetailById.bind(this.controller)
     );
   }
