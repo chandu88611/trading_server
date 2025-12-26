@@ -16,7 +16,7 @@ export class ForexTraderUserDetailsController {
     const { forexTraderUserId, forexType, token, isMaster } = req.body ?? {};
 
     // basic validations like your style
-    if (!forexTraderUserId || !forexType || !token) {
+    if (!forexTraderUserId || !forexType ) {
       res.status(400).json({
         message: "forexTraderUserId, forexType and token are required",
       });
@@ -29,10 +29,7 @@ export class ForexTraderUserDetailsController {
       return;
     }
 
-    if (typeof token !== "string" || !token.trim()) {
-      res.status(400).json({ message: "Invalid token" });
-      return;
-    }
+  
 
     if (isMaster !== undefined && typeof isMaster !== "boolean") {
       res.status(400).json({ message: "isMaster must be boolean" });

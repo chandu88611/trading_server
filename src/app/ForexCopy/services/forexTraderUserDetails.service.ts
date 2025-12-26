@@ -37,7 +37,7 @@ export class ForexTraderUserDetailsService {
       throw { status: 400, message: "forexTraderUserId_required" };
     if (!this.isValidForexType(body.forexType))
       throw { status: 400, message: "invalid_forexType" };
-    if (!token) throw { status: 400, message: "token_required" };
+    if (!token && body.forexType !== ForexTradeCategory.MT5) throw { status: 400, message: "token_required" };
 
     const isMaster = typeof body.isMaster === "boolean" ? body.isMaster : true;
 
