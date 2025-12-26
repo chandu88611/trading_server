@@ -12,6 +12,7 @@ import { SubscriptionPlanRouter } from "../subscriptionPlan/routes/subscriptionP
 import { PaymentRouter } from "../billing/routes/payment.route";
 import { UserSubscriptionRouter } from "../userSubscription/routes/userSubscription.route";
 import { CopyTradingRouter } from "../copyTrading/routes/copyTrading.routes";
+import { ForexTraderUserDetailsRouter } from "../ForexCopy/routes/forexTraderUserDetails.routes";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -39,6 +40,10 @@ export class ApplicationRouter {
     this.applicationRoutes.use(
       "/copy-trade",
       new CopyTradingRouter().getRouter()
+    );
+    this.applicationRoutes.use(
+      "/forex-trader-user-details",
+      new ForexTraderUserDetailsRouter().getRouter()
     );
   }
 
