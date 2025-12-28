@@ -46,7 +46,7 @@ export class ForexTraderUserDetailsService {
     await qr.startTransaction();
 
     try {
-      const existing = await this.db.findByUserAndType(uid, body.forexType, qr);
+      const existing = await this.db.findByUserAndType(uid, body.forexTraderUserId, qr);
 
       const row = existing
         ? await this.db.updateById(

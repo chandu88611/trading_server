@@ -133,7 +133,7 @@ export function requireAuth(roles?: Roles[]) {
 
       const decoded = jwt.verify(token, secret) as any;
 
-      if (decoded.type !== "access") {
+      if (!["access", "webhook"].includes(decoded.type)) {
         return res.status(401).json({ message: "Invalid token type" });
       }
 
@@ -141,6 +141,9 @@ export function requireAuth(roles?: Roles[]) {
         userId: String(decoded.userId),
         roles: decoded.roles || [],
       };
+      if(req.auth.roles?.length === 0){
+        req.auth.roles = [Roles.USER]
+      }
 
       console.log(
         "[AUTH] verified token for userId:",
@@ -149,15 +152,15 @@ export function requireAuth(roles?: Roles[]) {
         req.auth.roles
       );
 
-      // 🔐 Role check
-      if (roles && roles.length) {
-        const hasRole =
-          decoded.roles && roles.some((r) => decoded.roles.includes(r));
-        if (!hasRole) {
-          console.log("[AUTH] ❌ role mismatch");
-          return res.status(403).json({ message: "Forbidden" });
-        }
-      }
+      // // 🔐 Role check
+      // if (roles && roles.length) {
+      //   const hasRole = roles.some((r) => decoded.roles.includes(r));
+      //     console.log("hasRole ::: ",decoded)
+      //   if (!hasRole) {
+      //     console.log("[AUTH] ❌ role mismatch");
+      //     return res.status(403).json({ message: "Forbidden" });
+      //   }
+      // }
 
       return next();
     } catch (err: any) {

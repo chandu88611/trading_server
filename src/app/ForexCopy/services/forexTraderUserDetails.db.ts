@@ -23,11 +23,11 @@ export class ForexTraderUserDetailsDBService {
 
   async findByUserAndType(
     userId: number,
-    forexType: ForexTradeCategory,
+    forexTraderUserId: string,
     qr?: QueryRunner
   ) {
     return this.repo(qr).findOne({
-      where: { userId: String(userId) as any, forexType },
+      where: { userId: String(userId) as any, forexTraderUserId },
     });
   }
 

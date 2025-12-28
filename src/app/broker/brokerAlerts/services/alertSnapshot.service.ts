@@ -89,19 +89,19 @@ export class AlertSnapshotService {
             tradePayload,
             queryRunner
           );
-          await this.copyTradingService.fanoutFromMasterSignal(
-            {
-              userId: payload.userId,
-              brokerJobId: brockerJobId,
-              alertSnapshotId: alertData.id,
-              action: payload.action,
-              symbol: alertData.ticker,
-              exchange: alertData.exchange,
-              price: alertData.close,
-              signalTime: alertData.createdAt!,
-            },
-            queryRunner
-          );
+          // await this.copyTradingService.fanoutFromMasterSignal(
+          //   {
+          //     userId: payload.userId,
+          //     brokerJobId: brockerJobId,
+          //     alertSnapshotId: alertData.id,
+          //     action: payload.action,
+          //     symbol: alertData.ticker,
+          //     exchange: alertData.exchange,
+          //     price: alertData.close,
+          //     signalTime: alertData.createdAt!,
+          //   },
+          //   queryRunner
+          // );
           await queryRunner.commitTransaction();
           return alertData;
         } else {

@@ -5,7 +5,6 @@ import { AuthRequest } from "../../../../middleware/auth";
 import { AlertSnapshot } from "../../../../entity/AlertSnapshots";
 import {
   parseTimelineBucket,
-  TimelineQuery,
 } from "../interfaces/alertSnapshot.interface";
 
 export class AlertSnapshotController {
@@ -15,6 +14,7 @@ export class AlertSnapshotController {
   async create(req: AuthRequest, res: Response) {
     const payload = req.body;
     const userId = req.auth!.userId;
+    console.log("Creating alert snapshot for user:", userId, "with payload:", payload);
     const fullPayload = { ...payload, userId };
     const s: AlertSnapshot | undefined = await this.service.create(fullPayload);
     res.status(201).json({ message: "created", data: s });
