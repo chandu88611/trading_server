@@ -10,6 +10,23 @@ export enum ExecutionFlow {
   API = "API",
 }
 
+ 
+
+export enum UserStrategyStatus {
+  ACTIVE = "active",
+  PAUSED = "paused",
+  STOPPED = "stopped",
+}
+
+export enum TradingAccountStatus {
+  PENDING = "pending",
+  VERIFIED = "verified",
+  BLOCKED = "blocked",
+}
+
+
+// src/app/subscriptionPlan/enums/subscriberPlan.enum.ts
+
 export enum BillingInterval {
   MONTHLY = "monthly",
   YEARLY = "yearly",
@@ -26,14 +43,16 @@ export enum SubscriptionStatus {
   EXPIRED = "expired",
 }
 
-export enum UserStrategyStatus {
-  ACTIVE = "active",
-  PAUSED = "paused",
-  STOPPED = "stopped",
+export enum PlanTypeCode {
+  STRATEGY = "STRATEGY",
+  SELF_TRADE = "SELF_TRADE",
+  COPY_TRADER = "COPY_TRADER",
+  MASTER = "MASTER",
+  BUNDLE = "BUNDLE",
 }
 
-export enum TradingAccountStatus {
-  PENDING = "pending",
-  VERIFIED = "verified",
-  BLOCKED = "blocked",
+export enum MarketCode {
+  FOREX = "FOREX",
+  CRYPTO = "CRYPTO",
+  INDIAN = "INDIAN",
 }

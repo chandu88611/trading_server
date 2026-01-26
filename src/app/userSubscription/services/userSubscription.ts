@@ -15,14 +15,18 @@ export class UserSubscriptionService {
   async subscribe(userId: number, payload: IUserSubscribePayload) {
     const { planId } = payload;
 
+    if (!planId?.trim()) throw new Error("planId is required");
+
     const plan = await this.db.getPlan(planId);
     if (!plan) throw new Error("Invalid or inactive subscription plan");
 
     const existing = await this.db.getActiveSubscription(userId);
     if (existing) throw new Error("User already has an active subscription");
 
-    const durationDays = plan.interval === "monthly" ? 30 : 365;
+    // NEW DESIGN: interval comes from pricing.interval
+    const interval = (plan as any).pricing?.interval ?? "monthly";
 
+    const durationDays = interval === "monthly" ? 30 : interval === "yearly" ? 365 : 36500; // lifetime ~ 100y
     return this.db.createSubscription(userId, planId, durationDays);
   }
 
@@ -31,11 +35,13 @@ export class UserSubscriptionService {
     if (!sub) throw new Error("User has no active subscription");
 
     if (payload.cancelAtPeriodEnd) {
-      return this.db.cancelSubscription(userId);
+      // If you want true period-end behavior:
+      // return this.db.cancelAtPeriodEnd(userId);
+      // If you want to keep old behavior (immediate):
+      return this.db.cancelSubscriptionNow(userId);
     }
 
-    // immediate cancellation
-    await this.db.cancelSubscription(userId);
+    await this.db.cancelSubscriptionNow(userId);
   }
 
   getCurrentSubscription(userId: number) {
@@ -50,11 +56,7 @@ export class UserSubscriptionService {
     return this.db.getUserSubscriptions(userId);
   }
 
-  async subscriberPlanValidation(userId:number, assetType:AssetType){
-    try {
-      return await this.db.subscriberPlanValidation(userId, assetType);
-    } catch (error) {
-      throw error;
-    }
+  async subscriberPlanValidation(userId: number, assetType: AssetType) {
+    return this.db.subscriberPlanValidation(userId, assetType);
   }
 }

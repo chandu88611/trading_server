@@ -5,25 +5,44 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
   Index,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+  OneToOne,
 } from "typeorm";
+
+import { PlanType } from "./PlanType";
+import { Market } from "./Market";
+import { PlanPricing } from "./PlanPricing";
+import { PlanLimits } from "./PlanLimits";
+import { PlanFeature } from "./PlanFeature";
+import { PlanBundleItem } from "./PlanBundleItem";
 import { UserSubscription } from "./UserSubscription";
 import { SubscriptionInvoice } from "./SubscriptionInvoice";
-import {
-  BillingInterval,
-  ExecutionFlow,
-  MarketCategory,
-} from "../app/subscriptionPlan/enums/subscriberPlan.enum";
+import { PlanStrategy } from "./PlanStrategy";
 
 @Entity({ name: "subscription_plans" })
 export class SubscriptionPlan {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
 
-  @Index({ unique: true })
-  @Column({ name: "plan_code", type: "text", unique: true })
-  planCode!: string;
+  // BIGINT in pg -> treat as string in TS to avoid mismatch
+  @Index()
+  @Column({ name: "plan_type_id", type: "bigint" })
+  planTypeId!: string;
+
+  @Index()
+  @Column({ name: "market_id", type: "bigint", nullable: true })
+  marketId!: string | null;
+
+  @ManyToOne(() => PlanType, (t) => t.plans, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "plan_type_id" })
+  planType!: PlanType;
+
+  @ManyToOne(() => Market, (m) => m.plans, { onDelete: "RESTRICT", nullable: true })
+  @JoinColumn({ name: "market_id" })
+  market!: Market | null;
 
   @Column({ type: "text" })
   name!: string;
@@ -31,79 +50,17 @@ export class SubscriptionPlan {
   @Column({ type: "text", nullable: true })
   description!: string | null;
 
-  @Column({ name: "price_cents", type: "int" })
-  priceCents!: number;
-
-  @Column({ type: "varchar", length: 10, default: "INR" })
-  currency!: string;
-
-  // IMPORTANT: map to existing postgres enum type: billing_interval
-  @Index()
-  @Column({
-    name: "interval",
-    type: "enum",
-    enum: BillingInterval,
-    enumName: "billing_interval",
-    default: BillingInterval.MONTHLY,
-  })
-  interval!: BillingInterval;
-
-  // IMPORTANT: map to existing postgres enum type: market_category
-  @Index()
-  @Column({
-    name: "category",
-    type: "enum",
-    enum: MarketCategory,
-    enumName: "market_category",
-    default: MarketCategory.CRYPTO,
-  })
-  category!: MarketCategory;
-
-  // IMPORTANT: map to existing postgres enum type: execution_flow
-  @Index()
-  @Column({
-    name: "execution_flow",
-    type: "enum",
-    enum: ExecutionFlow,
-    enumName: "execution_flow",
-    default: ExecutionFlow.API,
-  })
-  executionFlow!: ExecutionFlow;
-
-  // entitlements/limits
-  @Column({ name: "max_active_strategies", type: "int", default: 1 })
-  maxActiveStrategies!: number;
-
-  @Column({ name: "max_connected_accounts", type: "int", default: 1 })
-  maxConnectedAccounts!: number;
-
-  @Column({ name: "max_daily_trades", type: "int", nullable: true })
-  maxDailyTrades!: number | null;
-
-  // numeric comes as string from pg driver unless you transform
-  @Column({
-    name: "max_lot_per_trade",
-    type: "numeric",
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
-  maxLotPerTrade!: string | null;
-
-  @Column({
-    name: "feature_flags",
-    type: "jsonb",
-    nullable: false,
-    default: () => "'{}'::jsonb",
-  })
-  featureFlags!: Record<string, any>;
-
   @Index()
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
-  @Column({ name: "metadata", type: "jsonb", nullable: true })
-  metadata!: Record<string, any> | null;
+  @Column({
+    name: "metadata",
+    type: "jsonb",
+    nullable: false,
+    default: () => "'{}'::jsonb",
+  })
+  metadata!: Record<string, any>;
 
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
@@ -111,6 +68,27 @@ export class SubscriptionPlan {
   @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
 
+  // 1-1 children
+  @OneToOne(() => PlanPricing, (p) => p.plan)
+  pricing?: PlanPricing;
+
+  @OneToOne(() => PlanLimits, (l) => l.plan)
+  limits?: PlanLimits;
+
+  // 1-many children
+  @OneToMany(() => PlanFeature, (f) => f.plan)
+  features?: PlanFeature[];
+
+  @OneToMany(() => PlanBundleItem, (bi) => bi.bundlePlan)
+  bundleItems?: PlanBundleItem[];
+
+  @OneToMany(() => PlanBundleItem, (bi) => bi.includedPlan)
+  includedInBundles?: PlanBundleItem[];
+
+  @OneToMany(() => PlanStrategy, (ps) => ps.plan)
+  planStrategies?: PlanStrategy[];
+
+  // existing relations
   @OneToMany(() => UserSubscription, (sub) => sub.plan)
   userSubscriptions?: UserSubscription[];
 

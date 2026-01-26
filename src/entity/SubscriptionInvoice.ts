@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from "typeorm";
 import { User } from "./User";
 import { SubscriptionPlan } from "./SubscriptionPlan";
@@ -17,14 +18,17 @@ export class SubscriptionInvoice {
   @PrimaryGeneratedColumn()
   id!: number;
 
+  @Index()
   @Column({ name: "subscription_id", type: "bigint" })
   subscriptionId!: number;
 
+  @Index()
   @Column({ name: "user_id", type: "bigint" })
   userId!: number;
 
-  @Column({ name: "plan_id", type: "bigint" })
-  planId!: number;
+  @Index()
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
 
   @Column({ name: "amount_cents", type: "int" })
   amountCents!: number;
@@ -35,16 +39,10 @@ export class SubscriptionInvoice {
   @Column({ type: "text", default: "pending" })
   status!: InvoiceStatus;
 
-  @Column({
-    name: "billing_period_start",
-    type: "timestamptz",
-  })
+  @Column({ name: "billing_period_start", type: "timestamptz" })
   billingPeriodStart!: Date;
 
-  @Column({
-    name: "billing_period_end",
-    type: "timestamptz",
-  })
+  @Column({ name: "billing_period_end", type: "timestamptz" })
   billingPeriodEnd!: Date;
 
   @Column({ name: "payment_gateway", type: "text", nullable: true })
@@ -59,17 +57,15 @@ export class SubscriptionInvoice {
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 
-  @ManyToOne(() => UserSubscription, (sub) => sub.id, {
-    onDelete: "CASCADE",
-  })
+  @ManyToOne(() => UserSubscription, { onDelete: "CASCADE" })
   @JoinColumn({ name: "subscription_id" })
   subscription!: UserSubscription;
 
-  @ManyToOne(() => User, (user) => user.id, { onDelete: "CASCADE" })
+  @ManyToOne(() => User, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
   user!: User;
 
-  @ManyToOne(() => SubscriptionPlan, (plan) => plan.id)
+  @ManyToOne(() => SubscriptionPlan, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "plan_id" })
   plan!: SubscriptionPlan;
 }

@@ -13,6 +13,7 @@ import {
   SubscriptionPayment,
   SubscriptionPlan,
   UserSubscription,
+
 } from "../entity";
 import { AlertSnapshot } from "../entity/AlertSnapshots";
 import { TradeSignal } from "../entity/TradeSignals";
@@ -24,6 +25,13 @@ import { CopyTradingMaster } from "../entity/CopyTradingMaster";
 import { UserTradingAccount } from "../entity/UserTradingAccount";
 import { Strategy } from "../entity/Strategy";
 import { ForexTraderUserDetails } from "../entity/ForexTraderUserDetails";
+import { PlanType } from "../entity/PlanType";
+import { Market } from "../entity/Market";
+import { PlanPricing } from "../entity/PlanPricing";
+import { PlanLimits } from "../entity/PlanLimits";
+import { PlanFeature } from "../entity/PlanFeature";
+import { PlanBundleItem } from "../entity/PlanBundleItem";
+import { PlanStrategy } from "../entity/PlanStrategy";
 
 dotenv.config();
 
@@ -59,7 +67,15 @@ export const AppDataSource = new DataSource({
     CopyTradingFollow,
     CopyTradingMaster,
     Strategy,
-    ForexTraderUserDetails
+    ForexTraderUserDetails,
+
+    PlanType,
+    Market,
+    PlanPricing,
+    PlanLimits,
+    PlanFeature,
+    PlanBundleItem,
+    PlanStrategy
   ],
   migrations: [],
   subscribers: [],

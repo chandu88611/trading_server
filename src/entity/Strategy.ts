@@ -4,47 +4,57 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  OneToMany,
+  Index,
 } from "typeorm";
-import { ExecutionFlow, MarketCategory } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
+import { PlanStrategy } from "./PlanStrategy";
+
+export type StrategyRisk = "Low" | "Medium" | "High";
 
 @Entity({ name: "strategies" })
 export class Strategy {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  // BIGINT IDs in postgres often come back as string in TS
+  @PrimaryGeneratedColumn({ type: "bigint" })
+  id!: string;
 
-  @Column({ name: "strategy_code", unique: true })
-  strategyCode!: string;
-
-  @Column()
+  @Index()
+  @Column({ type: "varchar", length: 120 })
   name!: string;
 
-  @Column({ nullable: true })
-  description!: string;
+  @Column({ type: "text", nullable: true })
+  description!: string | null;
 
-  @Column({ type: "enum", enum: MarketCategory })
-  category!: MarketCategory;
+  @Index()
+  @Column({ type: "varchar", length: 60 })
+  category!: string;
 
-  @Column({ type: "enum", enum: ExecutionFlow, array: true })
-  supportedExecutionFlows!: ExecutionFlow[];
+  @Column({ type: "varchar", length: 16, default: "Medium" })
+  risk!: StrategyRisk;
 
-  @Column({ default: 1 })
-  version!: number;
+  // easiest: store market codes as text[]
+  // examples: ["FOREX"], ["CRYPTO"], ["INDIAN"], ["FOREX","CRYPTO"]
+  @Column("text", { array: true, default: () => "ARRAY[]::text[]" })
+  marketCodes!: string[];
 
-  @Column({ type: "jsonb", default: {} })
-  defaultParams!: Record<string, any>;
+  // numeric -> returned as string; UI converts to number
+  @Column({ type: "numeric", precision: 8, scale: 2, default: 0 })
+  avgMonthlyReturnPct!: string;
 
-  @Column({ nullable: true })
-  riskProfile!: string;
+  @Column({ type: "numeric", precision: 6, scale: 2, default: 0 })
+  winRatePct!: string;
 
-  @Column({ default: true })
+  @Column({ type: "numeric", precision: 6, scale: 2, default: 0 })
+  maxDrawdownPct!: string;
+
+  @Column({ type: "boolean", default: true })
   isActive!: boolean;
-
-  @Column({ default: false })
-  isDeprecated!: boolean;
 
   @CreateDateColumn()
   createdAt!: Date;
 
   @UpdateDateColumn()
   updatedAt!: Date;
+
+  @OneToMany(() => PlanStrategy, (ps) => ps.strategy)
+  planStrategies!: PlanStrategy[];
 }

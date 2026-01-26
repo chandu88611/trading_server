@@ -1,23 +1,38 @@
+// src/entity/PlanStrategy.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
-  ManyToOne,
+  Column,
   CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
 } from "typeorm";
 import { SubscriptionPlan } from "./SubscriptionPlan";
 import { Strategy } from "./Strategy";
 
 @Entity({ name: "plan_strategies" })
+@Index(["planId", "strategyId"], { unique: true })
 export class PlanStrategy {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn({ type: "bigint" })
+  id!: string; // BIGINT -> keep as string
 
-  @ManyToOne(() => SubscriptionPlan, { onDelete: "CASCADE" })
+  @Index()
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
+
+  @Index()
+  @Column({ name: "strategy_id", type: "bigint" })
+  strategyId!: string; // BIGINT -> string
+
+  @ManyToOne(() => SubscriptionPlan, (p) => p.planStrategies, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "plan_id" })
   plan!: SubscriptionPlan;
 
   @ManyToOne(() => Strategy, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "strategy_id" })
   strategy!: Strategy;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 }

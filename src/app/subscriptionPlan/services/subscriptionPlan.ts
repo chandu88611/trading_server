@@ -1,93 +1,92 @@
 // src/app/subscriptionPlan/services/subscriptionPlan.ts
-import { SubscriptionPlanDBService } from "./subscriptionPlan.db";
-import { ICreateSubscriptionPlan, IQueryPlans, IUpdateSubscriptionPlan } from "../interfaces/subscriberPlan.interface";
 import { HttpStatusCode } from "../../../types/constants";
+import {
+  ICreateSubscriptionPlan,
+  IQueryPlans,
+  IUpdateSubscriptionPlan,
+} from "../interfaces/subscriberPlan.interface";
+import { SubscriptionPlanDBService } from "./subscriptionPlan.db";
 
 export class SubscriptionPlanService {
-  private dbService: SubscriptionPlanDBService;
+  private db: SubscriptionPlanDBService;
 
   constructor() {
-    this.dbService = new SubscriptionPlanDBService();
+    this.db = new SubscriptionPlanDBService();
   }
 
   async createPlan(payload: ICreateSubscriptionPlan) {
-    // basic validation
-    if (!payload.planCode?.trim()) {
-      throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "planCode is required" };
-    }
     if (!payload.name?.trim()) {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "name is required" };
     }
-    if (payload.priceCents == null || payload.priceCents < 0) {
-      throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "priceCents must be >= 0" };
+    if (!payload.planTypeCode) {
+      throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "planTypeCode is required" };
     }
 
-    const existing = await this.dbService.getPlanByCode(payload.planCode.trim());
-    if (existing) {
-      throw { statusCode: HttpStatusCode._CONFLICT, message: "planCode already exists" };
+    // pricing validation if provided
+    if (payload.pricing) {
+      if (payload.pricing.priceInr == null || payload.pricing.priceInr < 0) {
+        throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "pricing.priceInr must be >= 0" };
+      }
     }
 
-    return this.dbService.createPlan({
+    return this.db.createPlan({
       ...payload,
-      planCode: payload.planCode.trim(),
       name: payload.name.trim(),
+      description: payload.description ?? null,
+      metadata: payload.metadata ?? {},
+      isActive: payload.isActive ?? true,
     });
   }
 
-  async getPlan(id: number) {
-    if (!Number.isFinite(id)) {
+  async getPlan(id: string) {
+    if (!id?.trim()) {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "Invalid planId" };
     }
-
-    const plan = await this.dbService.getPlanById(id);
+    const plan = await this.db.getPlanById(id);
     if (!plan) {
       throw { statusCode: HttpStatusCode._NOT_FOUND, message: "Plan not found" };
     }
     return plan;
   }
 
-  async updatePlan(id: number, payload: IUpdateSubscriptionPlan) {
-    if (!Number.isFinite(id)) {
+  async updatePlan(id: string, payload: IUpdateSubscriptionPlan) {
+    if (!id?.trim()) {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "Invalid planId" };
     }
 
-    const plan = await this.dbService.getPlanById(id);
-    if (!plan) {
+    const existing = await this.db.getPlanById(id);
+    if (!existing) {
       throw { statusCode: HttpStatusCode._NOT_FOUND, message: "Plan not found" };
     }
 
-    // avoid null featureFlags accidentally
-    if (payload.featureFlags === undefined) {
-      // don't touch it
-    } else if (payload.featureFlags === null) {
-      payload.featureFlags = {};
+    if (payload.name !== undefined && !payload.name.trim()) {
+      throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "name cannot be empty" };
     }
 
-    await this.dbService.updatePlan(id, payload);
+    await this.db.updatePlan(id, {
+      ...payload,
+      name: payload.name?.trim(),
+      description: payload.description ?? undefined,
+    });
+
     return true;
   }
 
-  async deletePlan(id: number) {
-    if (!Number.isFinite(id)) {
+  async deactivatePlan(id: string) {
+    if (!id?.trim()) {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "Invalid planId" };
     }
 
-    const plan = await this.dbService.getPlanById(id);
+    const plan = await this.db.getPlanById(id);
     if (!plan) {
       throw { statusCode: HttpStatusCode._NOT_FOUND, message: "Plan not found" };
     }
 
-    // safer: soft behavior: deactivate instead of delete
-    // (you can switch to hard delete if you want)
-    await this.dbService.updatePlan(id, { isActive: false });
+    await this.db.updatePlan(id, { isActive: false });
     return true;
   }
 
   getPlans(query: IQueryPlans) {
-    return this.dbService.getPlans(query);
-  }
-
-  getActivePlans(category?: any, executionFlow?: any) {
-    return this.dbService.getActivePlans(category, executionFlow);
+    return this.db.getPlans(query);
   }
 }

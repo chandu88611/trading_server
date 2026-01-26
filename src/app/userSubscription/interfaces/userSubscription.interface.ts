@@ -1,5 +1,5 @@
 export interface IUserSubscribePayload {
-  planId: number;
+  planId: string;
 }
 
 export interface IUserSubscriptionCancelPayload {

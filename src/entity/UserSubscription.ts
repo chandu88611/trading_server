@@ -6,6 +6,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   JoinColumn,
+  Index,
 } from "typeorm";
 import { User } from "./User";
 import { SubscriptionPlan } from "./SubscriptionPlan";
@@ -16,32 +17,36 @@ export class UserSubscription {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ name: "user_id", type: "int" })
+  @Index()
+  @Column({ name: "user_id", type: "bigint" })
   userId!: number;
 
-  @Column({ name: "plan_id", type: "int" })
-  planId!: number;
+  @Index()
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
 
   @ManyToOne(() => User, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
   user!: User;
 
-  @ManyToOne(() => SubscriptionPlan)
+  @ManyToOne(() => SubscriptionPlan, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "plan_id" })
   plan!: SubscriptionPlan;
 
-  /* NEW STATE MACHINE */
+  // legacy status column exists in DB too, but your app wants v2
   @Column({
+    name: "status_v2",
     type: "enum",
     enum: SubscriptionStatus,
-    default: SubscriptionStatus.ACTIVE,
+    enumName: "subscription_status",
+    nullable: true,
   })
-  status!: SubscriptionStatus;
+  statusV2!: SubscriptionStatus | null;
 
   @Column({ name: "webhook_token", type: "text", nullable: true })
   webhookToken!: string | null;
 
-  @Column({ name: "execution_enabled", default: true })
+  @Column({ name: "execution_enabled", type: "boolean", default: true })
   executionEnabled!: boolean;
 
   @Column({ name: "liquidate_only_until", type: "timestamptz", nullable: true })
