@@ -8,6 +8,7 @@ export enum ExecutionFlow {
   PINE_CONNECTOR = "PINE_CONNECTOR",
   MANAGED = "MANAGED",
   API = "API",
+  DIRECT = "direct",
 }
 
  

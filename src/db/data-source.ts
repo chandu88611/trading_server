@@ -75,7 +75,7 @@ export const AppDataSource = new DataSource({
     PlanLimits,
     PlanFeature,
     PlanBundleItem,
-    PlanStrategy
+    PlanStrategy,
   ],
   migrations: [],
   subscribers: [],

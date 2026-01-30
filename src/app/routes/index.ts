@@ -13,6 +13,8 @@ import { PaymentRouter } from "../billing/routes/payment.route";
 import { UserSubscriptionRouter } from "../userSubscription/routes/userSubscription.route";
 import { CopyTradingRouter } from "../copyTrading/routes/copyTrading.routes";
 import { ForexTraderUserDetailsRouter } from "../ForexCopy/routes/forexTraderUserDetails.routes";
+import { TradingAccountRouter } from "../tradingAccount/routes/tradingAccount.route";
+import { Mt5ListenerRouter } from "../mt5Listener/mt5Listener.routes";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -37,6 +39,7 @@ export class ApplicationRouter {
     );
     this.applicationRoutes.use("/billing", new PaymentRouter().getRouter());
     this.applicationRoutes.use("/", new UserSubscriptionRouter().getRouter());
+    this.applicationRoutes.use("/trading-accounts", new TradingAccountRouter().getRouter());
     this.applicationRoutes.use(
       "/copy-trade",
       new CopyTradingRouter().getRouter()
@@ -45,6 +48,9 @@ export class ApplicationRouter {
       "/forex-trader-user-details",
       new ForexTraderUserDetailsRouter().getRouter()
     );
+
+    this.applicationRoutes.use("/signal", new Mt5ListenerRouter().getRouter());
+
   }
 
   getRouter() {

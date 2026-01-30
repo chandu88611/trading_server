@@ -49,17 +49,17 @@ export class AlertSnapshotService {
           message: "unsupported_asset_type",
         };
       }
-      let isValidPlan =
-        await this.userSubscriptionService.subscriberPlanValidation(
-          payload.userId,
-          assetType
-        );
-      if (!isValidPlan) {
-        throw {
-          status: HttpStatusCode._BAD_REQUEST,
-          message: "invalid_subscription_plan",
-        };
-      }
+      // let isValidPlan =
+      //   await this.userSubscriptionService.subscriberPlanValidation(
+      //     payload.userId,
+      //     assetType
+      //   );
+      // if (!isValidPlan) {
+      //   throw {
+      //     status: HttpStatusCode._BAD_REQUEST,
+      //     message: "invalid_subscription_plan",
+      //   };
+      // }
       if (credentialId && credentialId > 0 && credentialId !== undefined) {
         let brockerJobId: number =
           await this.brokerJobService.getOrCreateBrokerJobId(
