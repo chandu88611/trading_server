@@ -32,12 +32,16 @@ export class BrokerJobDB {
         status: "pending",
         attempts: 0,
       });
+      console.log("Creating broker job entity:", entity, payload);
+
 
       let data = await queryRunner.manager
         .getRepository(BrokerJob)
         .save(entity);
+        console.log("Saved broker job data:", data);
       return data?.id;
     } catch (error) {
+      console.error("Error in getOrCreateBrokerJobId:", error);
       throw error;
     }
   }

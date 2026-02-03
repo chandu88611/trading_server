@@ -1,21 +1,24 @@
 import AppDataSource from "../../../../db/data-source";
 import { Repository } from "typeorm";
-import { BrokerCredential, User } from "../../../../entity";
+import { BrokerCredential, ForexTradeCategory, User } from "../../../../entity";
 import {
   ICreateBrokerCredential,
   IUpdateBrokerCredential,
 } from "../interfaces/brokerCredential.interface";
 import { HttpStatusCode } from "../../../../types/constants";
+import { ForexTraderUserDetails } from "../../../../entity/ForexTraderUserDetails";
 
 export class BrokerCredentialDB {
   private repo: Repository<BrokerCredential>;
   private userRepo: Repository<User>;
+  private forexRepo: Repository<ForexTraderUserDetails>;
 
   constructor() {
     this.repo = AppDataSource.getRepository(BrokerCredential);
     this.userRepo = AppDataSource.getRepository(User);
+    this.forexRepo = AppDataSource.getRepository(ForexTraderUserDetails);
   }
-  async getCredentialIdByUserId(userId: number): Promise<number> {
+  async getCredentialIdByUserId(userId: number): Promise<{id: number, keyName: string | null}[]> {
     try {
       let userTradeStatus = await this.userRepo.findOne({
         where: { id: userId },
@@ -26,16 +29,33 @@ export class BrokerCredentialDB {
           message: "trading_access_disabled",
         };
       }
-      const credential = await this.repo.findOne({
+      const credential = await this.repo.find({
         where: { user: { id: userId } },
       });
-      if (!credential) {
+      if (!credential || credential.length === 0) {
         throw {
           statusCode: HttpStatusCode._BAD_REQUEST,
           message: "credential_not_found",
         };
       }
-      return credential.id;
+      return credential.map((item) => ({id: item.id, keyName: item.keyName}));
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getTypeOfBrokerByUserId(userId: number): Promise<ForexTradeCategory[]> {
+    try {
+      let data = await this.forexRepo.find({
+        where: { user: { id: userId } },
+      });
+      if (!data) {
+        throw {
+          statusCode: HttpStatusCode._BAD_REQUEST,
+          message: "forex_trader_details_not_found",
+        };
+      }
+      return data.map((item) => item.forexType);
     } catch (error) {
       throw error;
     }

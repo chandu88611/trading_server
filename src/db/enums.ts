@@ -29,3 +29,24 @@ export enum CopyTradeSideEnum {
   BUY = "BUY",
   SELL = "SELL",
 }
+
+export type ClaimedSignal = {
+  id: number;
+  jobId: number;
+  action: string;
+  symbol: string;
+  price: string | number;
+  exchange: string;
+  assetType: string;
+  signalTime: string;
+  userId: number; 
+};
+
+export type OAuthExchangeResult = {
+  ok: boolean;
+  url: string;
+  status?: number;
+  latencyMs: number;
+  payload?: any;
+  error?: string;
+};

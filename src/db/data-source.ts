@@ -32,6 +32,7 @@ import { PlanLimits } from "../entity/PlanLimits";
 import { PlanFeature } from "../entity/PlanFeature";
 import { PlanBundleItem } from "../entity/PlanBundleItem";
 import { PlanStrategy } from "../entity/PlanStrategy";
+import { CTradeSignal, CTradeSignalStatus } from "../entity/CTradeSignals";
 
 dotenv.config();
 
@@ -76,6 +77,8 @@ export const AppDataSource = new DataSource({
     PlanFeature,
     PlanBundleItem,
     PlanStrategy,
+    CTradeSignal,
+    CTradeSignalStatus
   ],
   migrations: [],
   subscribers: [],

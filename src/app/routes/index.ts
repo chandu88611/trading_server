@@ -15,6 +15,7 @@ import { CopyTradingRouter } from "../copyTrading/routes/copyTrading.routes";
 import { ForexTraderUserDetailsRouter } from "../ForexCopy/routes/forexTraderUserDetails.routes";
 import { TradingAccountRouter } from "../tradingAccount/routes/tradingAccount.route";
 import { Mt5ListenerRouter } from "../mt5Listener/mt5Listener.routes";
+import { CTraderRoutes } from "../cTraderListener/routes/cTrader";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -50,6 +51,7 @@ export class ApplicationRouter {
     );
 
     this.applicationRoutes.use("/signal", new Mt5ListenerRouter().getRouter());
+    this.applicationRoutes.use("/ctrader", new CTraderRoutes().getRouter());
 
   }
 

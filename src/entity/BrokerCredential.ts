@@ -16,6 +16,9 @@ export class BrokerCredential {
   @PrimaryGeneratedColumn()
   id!: number;
 
+  @Column({ name: "user_id", type: "int" })
+  userId!: number;
+
   @ManyToOne(() => User, (u) => u.brokerCredentials, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
   user!: User;
@@ -40,4 +43,7 @@ export class BrokerCredential {
 
   @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
+
+  @Column({ name: "broker_account_id", type: "text", nullable: true })
+  brokerAccountId!: string | null;
 }

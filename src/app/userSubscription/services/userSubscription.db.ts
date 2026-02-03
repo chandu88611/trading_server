@@ -1,4 +1,4 @@
-import { DeepPartial, Repository } from "typeorm";
+import { Brackets, DeepPartial, Repository } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 
 import { UserSubscription } from "../../../entity/UserSubscription";
@@ -149,12 +149,15 @@ export class UserSubscriptionDBService {
       .leftJoinAndSelect("plan.market", "market")
       .where("us.user_id = :userId", { userId })
       .andWhere("us.status_v2 = :status", { status: SubscriptionStatus.ACTIVE })
-      .andWhere("plan.is_active = true");
-
+      .andWhere("plan.is_active = true")
+      .andWhere(
+        new Brackets((q) => {
+          q.where("plan.market_id IS NULL")        
+           .orWhere("market.code = :mc", { mc: assetType }); 
+        })
+      );
     // Map AssetType -> market.code if needed
     // If your AssetType already matches: 'FOREX' | 'CRYPTO' | 'INDIAN', this works directly.
-    qb.andWhere("market.code = :mc", { mc: assetType });
-
     return qb.getOne();
   }
 }

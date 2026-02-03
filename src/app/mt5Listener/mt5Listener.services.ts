@@ -9,13 +9,13 @@ export class Mt5ListenerServices {
     const job = await this.dbService.getNextPendingJob(
       brokerAccountId
     );
-    if (!job) return {}; // EA ignores
+    if (!job) return {};
     
     await this.dbService.markJobInProgress(job.job_id);
 
     return {
-      ackId: job.job_id,                   // monotonic
-      side: String(job.side).toLowerCase(),// buy/sell
+      ackId: job.job_id,                   
+      side: String(job.side).toLowerCase(),
       symbol: job.symbol,
       qty: Number(job.qty) || 0,
     };

@@ -1,3 +1,4 @@
+import { ForexTradeCategory } from "../../../../entity";
 import { BrokerCredentialDB } from "../db/brokerCredential.db";
 import { ICreateBrokerCredential, IUpdateBrokerCredential } from "../interfaces/brokerCredential.interface";
 
@@ -11,9 +12,21 @@ export class BrokerCredentialService {
     
     return await this.db.create(payload);
   }
-  async getCredentialIdByUserId(userId: number):Promise<number>{
+  async getCredentialIdByUserId(userId: number):Promise<{id: number, keyName: string | null}[]> {
     try {
       return await this.db.getCredentialIdByUserId(userId);
+    } catch (error) {
+      throw error;
+    }
+  }
+  async getTypeOfBrokerByUserId(userId: number):Promise<ForexTradeCategory[]>{
+    try {
+      const credential:ForexTradeCategory[] = await this.db.getTypeOfBrokerByUserId(userId);
+      if(credential && credential.length>0){
+        return credential
+      }else{
+        throw new Error("credential_not_found");
+      }
     } catch (error) {
       throw error;
     }

@@ -1,7 +1,9 @@
 import AppDataSource from "../../../../db/data-source";
+import { ForexTradeCategory } from "../../../../entity";
 import { HttpStatusCode } from "../../../../types/constants";
 import { AssetClassifier, AssetType } from "../../../../types/trade-identify";
 import { CopyTradingService } from "../../../copyTrading/services/copyTrading.service";
+import { CTraderService } from "../../../cTraderListener/services/cTrader";
 import { UserSubscriptionService } from "../../../userSubscription/services/userSubscription";
 import { BrokerCredentialService } from "../../brokerCredentials/services/brokerCredential.service";
 import { BrokerJobService } from "../../brokerJobs/services/brokerJob.service";
@@ -19,6 +21,7 @@ export class AlertSnapshotService {
   private brokerJobService: BrokerJobService;
   private brokerCredentialService: BrokerCredentialService;
   private tradeSignalService: TradeSignalService;
+  private cTraderService: CTraderService;
   private userSubscriptionService: UserSubscriptionService;
   private copyTradingService: CopyTradingService;
   constructor() {
@@ -28,6 +31,7 @@ export class AlertSnapshotService {
     this.tradeSignalService = new TradeSignalService();
     this.userSubscriptionService = new UserSubscriptionService();
     this.copyTradingService = new CopyTradingService();
+    this.cTraderService = new CTraderService();
   }
   async create(payload: ICreateAlertSnapshot) {
     const queryRunner = AppDataSource.createQueryRunner();
@@ -35,10 +39,12 @@ export class AlertSnapshotService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
-      let credentialId: number =
+      let credentialdata: {id: number, keyName: string | null}[] =
         await this.brokerCredentialService.getCredentialIdByUserId(
           payload.userId
         );
+      let credentialTypes: ForexTradeCategory[] =  await this.brokerCredentialService.getTypeOfBrokerByUserId(payload.userId);
+      console.log("Fetched credential data:", credentialTypes);
       let assetType = AssetClassifier.detect({
         symbol: payload.ticker,
         exchange: payload.exchange,
@@ -49,46 +55,67 @@ export class AlertSnapshotService {
           message: "unsupported_asset_type",
         };
       }
-      // let isValidPlan =
-      //   await this.userSubscriptionService.subscriberPlanValidation(
-      //     payload.userId,
-      //     assetType
-      //   );
-      // if (!isValidPlan) {
-      //   throw {
-      //     status: HttpStatusCode._BAD_REQUEST,
-      //     message: "invalid_subscription_plan",
-      //   };
-      // }
-      if (credentialId && credentialId > 0 && credentialId !== undefined) {
-        let brockerJobId: number =
-          await this.brokerJobService.getOrCreateBrokerJobId(
+      let isValidPlan =
+        await this.userSubscriptionService.subscriberPlanValidation(
+          payload.userId,
+          assetType
+        );
+      if (!isValidPlan) {
+        throw {
+          status: HttpStatusCode._BAD_REQUEST,
+          message: "invalid_subscription_plan",
+        };
+      }
+      let mt5BrokerIds: number[] = [];
+      let cTraderBrokerIds: number[] = [];
+      let credentialId: number[] = [];
+      if (credentialdata && credentialdata.length > 0) {
+        for (let cred of credentialdata){
+
+let dataId = await this.brokerJobService.getOrCreateBrokerJobId(
             {
-              credentialId: credentialId,
+              credentialId: cred.id,
               type: "trade",
               payload,
             },
             queryRunner
           );
-        if (brockerJobId && brockerJobId > 0 && brockerJobId !== undefined) {
+          console.log("Created broker job id:", dataId, "for credential:", cred);
+          if(cred.keyName === "MT5"){
+            mt5BrokerIds.push(dataId);
+
+
+          credentialId.push(dataId);
+          } else if(cred.keyName === "CT"){
+            cTraderBrokerIds.push(dataId);
+          }
+        }
+        if (credentialId && credentialId.length > 0) {
+          let brockerJobId = credentialId[0];
           let alertData = await this.alertSnapshotDB.create(
             payload,
             brockerJobId,
             queryRunner
           );
           let tradePayload: ICreateTradeSignal = {
-            jobId: brockerJobId,
+            jobId: mt5BrokerIds[0],
             action: payload.action,
             symbol: alertData.ticker,
             price: alertData.close,
             exchange: alertData.exchange,
             signalTime: alertData.createdAt!,
           };
-
+          if(credentialTypes.includes(ForexTradeCategory.MT5)){
           await this.tradeSignalService.createTradeSignal(
             tradePayload,
             queryRunner
           );
+        }
+          if(credentialTypes.includes(ForexTradeCategory.CTrader)){
+            tradePayload.jobId = cTraderBrokerIds[0];
+            console.log("Creating cTrader trade signal with payload:", tradePayload);
+          await this.cTraderService.createTradeSignal(tradePayload, queryRunner);
+        }
           // await this.copyTradingService.fanoutFromMasterSignal(
           //   {
           //     userId: payload.userId,
@@ -105,6 +132,7 @@ export class AlertSnapshotService {
           await queryRunner.commitTransaction();
           return alertData;
         } else {
+          console.log("No valid broker job IDs created.", credentialId);
           throw {
             status: HttpStatusCode._BAD_REQUEST,
             message: "broker_job_creation_failed",
