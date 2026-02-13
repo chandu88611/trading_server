@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CopyTradeSideEnum = exports.AddressTypeEnum = exports.SubscriptionStatusEnum = exports.PlanBillingCycleEnum = exports.UserRoleEnum = void 0;
+exports.UserTradeType = exports.CopyTradeSideEnum = exports.AddressTypeEnum = exports.SubscriptionStatusEnum = exports.PlanBillingCycleEnum = exports.UserRoleEnum = void 0;
 var UserRoleEnum;
 (function (UserRoleEnum) {
     UserRoleEnum["USER"] = "USER";
@@ -33,3 +33,8 @@ var CopyTradeSideEnum;
     CopyTradeSideEnum["BUY"] = "BUY";
     CopyTradeSideEnum["SELL"] = "SELL";
 })(CopyTradeSideEnum || (exports.CopyTradeSideEnum = CopyTradeSideEnum = {}));
+var UserTradeType;
+(function (UserTradeType) {
+    UserTradeType["MT5"] = "MT5";
+    UserTradeType["CTRADER"] = "CT";
+})(UserTradeType || (exports.UserTradeType = UserTradeType = {}));

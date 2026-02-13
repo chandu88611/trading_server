@@ -10,6 +10,15 @@ export enum AssetType {
   UNKNOWN = "UNKNOWN",
 }
 
+export enum MarketType {
+  FOREX = "FOREX",
+  CRYPTO = "CRYPTO",
+  INDIAN = "INDIAN",
+}
+
+
+
+
 export type DetectInput = {
   symbol?: string | null; // can be "DOGE" or "BINANCE:BTCUSDT" etc.
   exchange?: string | null; // optional separate exchange

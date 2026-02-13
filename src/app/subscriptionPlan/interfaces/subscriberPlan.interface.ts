@@ -41,7 +41,7 @@ export interface ICreateSubscriptionPlan {
   strategyIds?: number[]; // map to strategies table
 
   // plan_bundle_items (optional)
-  bundleItems?: { includedPlanId: string; quantity?: number }[]; // includedPlanId is UUID
+  bundleItems?: { includedPlanId: number; quantity?: number }[]; // includedPlanId is BIGINT
 }
 
 export interface IUpdateSubscriptionPlan {
@@ -74,7 +74,7 @@ export interface IUpdateSubscriptionPlan {
   // replace-all behavior
   features?: FeatureKV | null;      // null => clear all features
   strategyIds?: number[] | null;    // null => clear all strategies
-  bundleItems?: { includedPlanId: string; quantity?: number }[] | null; // null => clear bundle items
+  bundleItems?: { includedPlanId: number; quantity?: number }[] | null; // null => clear bundle items
 }
 
 export interface IQueryPlans {

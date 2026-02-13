@@ -20,6 +20,8 @@ const copyTrading_routes_1 = require("../copyTrading/routes/copyTrading.routes")
 const forexTraderUserDetails_routes_1 = require("../ForexCopy/routes/forexTraderUserDetails.routes");
 const tradingAccount_route_1 = require("../tradingAccount/routes/tradingAccount.route");
 const mt5Listener_routes_1 = require("../mt5Listener/mt5Listener.routes");
+const cTrader_1 = require("../cTraderListener/routes/cTrader");
+const trade_route_1 = require("../trade/routes/trade.route");
 class ApplicationRouter {
     constructor() {
         this.applicationRoutes = (0, express_1.Router)();
@@ -41,6 +43,8 @@ class ApplicationRouter {
         this.applicationRoutes.use("/copy-trade", new copyTrading_routes_1.CopyTradingRouter().getRouter());
         this.applicationRoutes.use("/forex-trader-user-details", new forexTraderUserDetails_routes_1.ForexTraderUserDetailsRouter().getRouter());
         this.applicationRoutes.use("/signal", new mt5Listener_routes_1.Mt5ListenerRouter().getRouter());
+        this.applicationRoutes.use("/ctrader", new cTrader_1.CTraderRoutes().getRouter());
+        this.applicationRoutes.use("/trade", new trade_route_1.TradeRouter().getRouter());
     }
     getRouter() {
         return this.applicationRoutes;

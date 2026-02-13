@@ -27,8 +27,8 @@ export class SubscriptionInvoice {
   userId!: number;
 
   @Index()
-  @Column({ name: "plan_id", type: "uuid" })
-  planId!: string;
+  @Column({ name: "plan_id", type: "bigint" })
+  planId!: number;
 
   @Column({ name: "amount_cents", type: "int" })
   amountCents!: number;

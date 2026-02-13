@@ -17,85 +17,17 @@ export type CreateTradePayload = {
 };
 
 export class TradeService {
-  private guard = new TradeGuardService();
   private db = new TradeDBService();
-  private gateway = new CtraderGatewayClient();
 
-  async createTrade(userId: number, payload: CreateTradePayload) {
-    const queryRunner = AppDataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+  async getAllTradesForUser({userId, accountId, start, count, searchParams, status}: {userId: number, accountId: string, start: number, count: number, searchParams?: string, status?: string}) {
+    return this.db.getAllTradeForUser({ userId, accountId, start, count, searchParams, status });
+  } 
 
-    try {
-      const { symbol, exchange } = payload;
+  async getSignalStatusForTrade(signalId: number) {
+    return this.db.getSignalStatusForTrade(signalId);
+  }
 
-      // 1) check plan & user status
-      const check = await this.guard.checkTradeAllowed({
-        userId,
-        symbol,
-        exchange,
-      });
-
-      if (!check.allowed) {
-        return {
-          ok: false,
-          blocked: true,
-          reason: check.reason,
-        };
-      }
-
-      // 2) call gateway to actually place the order
-      let gwResp;
-      try {
-        gwResp = await this.gateway.placeOrder({
-          tradingAccountId: payload.tradingAccountId,
-          symbol: payload.symbol,
-          side: payload.side,
-          quantity: payload.quantity,
-          price: payload.price ?? null,
-        });
-      } catch (error) {
-        throw {
-          statusCode: HttpStatusCode._BAD_REQUEST,
-          message: "gateway_order_placement_failed",
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-
-      // 3) log trade signal
-      const assetType = AssetClassifier.detect({ symbol, exchange });
-      const signal = await this.db.logSignalWithRunner(
-        {
-          userId,
-          side: payload.side,
-          symbol,
-          price: payload.price ?? null,
-          exchange: payload.exchange ?? null,
-          assetType,
-        },
-        queryRunner
-      );
-
-      await queryRunner.commitTransaction();
-
-      return {
-        ok: true,
-        gateway: gwResp,
-        signal,
-        subscriptionId: check.subscriptionId ?? null,
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      if (error instanceof Object && 'statusCode' in error) {
-        throw error;
-      }
-      throw {
-        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
-        message: "failed_to_create_trade",
-        error: error instanceof Error ? error.message : String(error),
-      };
-    } finally {
-      await queryRunner.release();
-    }
+  async getTradeHistory({userId, accountId, start, count, searchParams, status}: {userId: number, accountId: string, start: number, count: number, searchParams?: string, status?: string}) {
+    return this.db.getHistoryForTrade({ userId, accountId, start, count, searchParams, status });
   }
 }

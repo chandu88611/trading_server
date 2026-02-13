@@ -8,7 +8,6 @@ import {
   OneToMany,
 } from "typeorm";
 import { AuthProvider } from "./AuthProvider";
-import { BrokerCredential } from "./BrokerCredential";
 
 @Entity({ name: "users" })
 export class User {
@@ -119,6 +118,4 @@ export class User {
   @OneToMany(() => AuthProvider, (ap) => ap.user)
   authProviders?: AuthProvider[];
 
-  @OneToMany(() => BrokerCredential, (bc) => bc.user)
-  brokerCredentials?: BrokerCredential[];
 }

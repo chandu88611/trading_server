@@ -13,6 +13,7 @@ exports.ForexTraderUserDetails = void 0;
 const typeorm_1 = require("typeorm");
 const User_1 = require("./User");
 const entity_enum_1 = require("./entity.enum");
+const BrokerJob_1 = require("./BrokerJob");
 let ForexTraderUserDetails = class ForexTraderUserDetails {
 };
 exports.ForexTraderUserDetails = ForexTraderUserDetails;
@@ -58,6 +59,10 @@ __decorate([
     (0, typeorm_1.JoinColumn)({ name: "user_id" }),
     __metadata("design:type", Object)
 ], ForexTraderUserDetails.prototype, "user", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => BrokerJob_1.ForexTradeStatus, (fts) => fts.forexTraderUserDetails),
+    __metadata("design:type", Array)
+], ForexTraderUserDetails.prototype, "forexTradeStatuses", void 0);
 exports.ForexTraderUserDetails = ForexTraderUserDetails = __decorate([
     (0, typeorm_1.Entity)({ name: "forex_trader_user_details" })
 ], ForexTraderUserDetails);

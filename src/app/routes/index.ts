@@ -2,20 +2,18 @@ import { Router } from "express";
 import { UserRouter } from "../user/routes";
 import AuthRouter from "../auth/routes/auth.route";
 
-import BrokerCredentialRouter from "../broker/brokerCredentials/routes/brokerCredential.route";
-import BrokerSessionRouter from "../broker/brokerSessions/routes/brokerSession.route";
 import BrokerJobRouter from "../broker/brokerJobs/routes/brokerJob.route";
-import BrokerEventRouter from "../broker/brokerEvents/routes/brokerEvent.route";
-import TradeSignalRouter from "../broker/brokerSignals/routes/tradeSignal.route";
+// import TradeSignalRouter from "../broker/brokerSignals/routes/tradeSignal.route";
 import AlertSnapshotRouter from "../broker/brokerAlerts/routes/alertSnapshot.route";
 import { SubscriptionPlanRouter } from "../subscriptionPlan/routes/subscriptionPlan.route";
 import { PaymentRouter } from "../billing/routes/payment.route";
 import { UserSubscriptionRouter } from "../userSubscription/routes/userSubscription.route";
-import { CopyTradingRouter } from "../copyTrading/routes/copyTrading.routes";
-import { ForexTraderUserDetailsRouter } from "../ForexCopy/routes/forexTraderUserDetails.routes";
+// import { CopyTradingRouter } from "../copyTrading/routes/copyTrading.routes";
 import { TradingAccountRouter } from "../tradingAccount/routes/tradingAccount.route";
 import { Mt5ListenerRouter } from "../mt5Listener/mt5Listener.routes";
-import { CTraderRoutes } from "../cTraderListener/routes/cTrader";
+import ctraderRouter from "../ctrader/ctraderRoutes";
+import { ZebuRouter } from "../zebu/routes/zebu";
+import { TradeRouter } from "../trade/routes/trade.route";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -28,11 +26,8 @@ export class ApplicationRouter {
   initApplicationRoutes() {
     this.applicationRoutes.use("/user", new UserRouter().getRouter());
     this.applicationRoutes.use("/auth", new AuthRouter().getRouter());
-    this.applicationRoutes.use("/broker/credentials", BrokerCredentialRouter);
-    this.applicationRoutes.use("/broker/sessions", BrokerSessionRouter);
     this.applicationRoutes.use("/broker/jobs", BrokerJobRouter);
-    this.applicationRoutes.use("/broker/events", BrokerEventRouter);
-    this.applicationRoutes.use("/broker/signals", TradeSignalRouter);
+    // this.applicationRoutes.use("/broker/signals", TradeSignalRouter);
     this.applicationRoutes.use("/tradingview/alerts", AlertSnapshotRouter);
     this.applicationRoutes.use(
       "/admin/plans",
@@ -41,17 +36,16 @@ export class ApplicationRouter {
     this.applicationRoutes.use("/billing", new PaymentRouter().getRouter());
     this.applicationRoutes.use("/", new UserSubscriptionRouter().getRouter());
     this.applicationRoutes.use("/trading-accounts", new TradingAccountRouter().getRouter());
-    this.applicationRoutes.use(
-      "/copy-trade",
-      new CopyTradingRouter().getRouter()
-    );
-    this.applicationRoutes.use(
-      "/forex-trader-user-details",
-      new ForexTraderUserDetailsRouter().getRouter()
-    );
+    // this.applicationRoutes.use(
+    //   "/copy-trade",
+    //   new CopyTradingRouter().getRouter()
+    // );
+    
 
     this.applicationRoutes.use("/signal", new Mt5ListenerRouter().getRouter());
-    this.applicationRoutes.use("/ctrader", new CTraderRoutes().getRouter());
+    this.applicationRoutes.use("/ctrader", ctraderRouter);
+    this.applicationRoutes.use("/zebu", new ZebuRouter().getRouter());
+    this.applicationRoutes.use("/trade",new TradeRouter().getRouter());
 
   }
 

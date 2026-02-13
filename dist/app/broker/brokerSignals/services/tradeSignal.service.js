@@ -11,7 +11,7 @@ class TradeSignalService {
     }
     async createTradeSignal(alertData, queryRunner) {
         try {
-            await this.db.createTradeSignal(alertData, queryRunner);
+            return await this.db.createTradeSignal(alertData, queryRunner);
         }
         catch (error) {
             throw error;

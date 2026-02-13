@@ -24,14 +24,14 @@ export class SubscriptionPlanController {
 
   @ControllerError()
   async getPlan(req: Request, res: Response) {
-    const id = String(req.params.planId); // UUID
+    const id = Number(req.params.planId); // BIGINT
     const plan = await this.service.getPlan(id);
     res.status(200).json({ message: "Fetched", data: plan });
   }
 
   @ControllerError()
   async updatePlan(req: Request, res: Response) {
-    const id = String(req.params.planId); // UUID
+    const id = Number(req.params.planId); // BIGINT
     const payload = req.body as IUpdateSubscriptionPlan;
     await this.service.updatePlan(id, payload);
     res.status(200).json({ message: "Updated successfully" });
@@ -39,7 +39,7 @@ export class SubscriptionPlanController {
 
   @ControllerError()
   async deletePlan(req: Request, res: Response) {
-    const id = String(req.params.planId); // UUID
+    const id = Number(req.params.planId); // BIGINT
     await this.service.deactivatePlan(id);
     res.status(200).json({ message: "Plan deactivated" });
   }

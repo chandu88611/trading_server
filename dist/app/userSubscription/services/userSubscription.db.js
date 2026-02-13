@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserSubscriptionDBService = void 0;
+const typeorm_1 = require("typeorm");
 const data_source_1 = __importDefault(require("../../../db/data-source"));
 const UserSubscription_1 = require("../../../entity/UserSubscription");
 const SubscriptionPlan_1 = require("../../../entity/SubscriptionPlan");
@@ -121,10 +122,13 @@ class UserSubscriptionDBService {
             .leftJoinAndSelect("plan.market", "market")
             .where("us.user_id = :userId", { userId })
             .andWhere("us.status_v2 = :status", { status: subscriberPlan_enum_1.SubscriptionStatus.ACTIVE })
-            .andWhere("plan.is_active = true");
+            .andWhere("plan.is_active = true")
+            .andWhere(new typeorm_1.Brackets((q) => {
+            q.where("plan.market_id IS NULL")
+                .orWhere("market.code = :mc", { mc: assetType });
+        }));
         // Map AssetType -> market.code if needed
         // If your AssetType already matches: 'FOREX' | 'CRYPTO' | 'INDIAN', this works directly.
-        qb.andWhere("market.code = :mc", { mc: assetType });
         return qb.getOne();
     }
 }

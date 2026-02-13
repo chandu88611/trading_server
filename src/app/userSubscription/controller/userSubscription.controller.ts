@@ -37,8 +37,11 @@ export class UserSubscriptionController {
   @ControllerError()
   async current(req: Request, res: Response) {
     const userId = (req as any).auth.userId as number;
+    const start = Number(req.query.start || 0);
+    const count = Number(req.query.count || 20);
+    const searchParams = req.query.searchParams;
 
-    const subscription = await this.service.getCurrentSubscription(userId);
+    const subscription = await this.service.getCurrentSubscription(userId, start, count, searchParams);
 
     res.status(200).json({
       message: "Fetched current subscription",

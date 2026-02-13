@@ -10,8 +10,8 @@ const entities_1 = require("../../../entities");
 const constants_1 = require("../../../types/constants");
 class TradeDBService {
     constructor() {
-        this.snapshotRepo = data_source_1.default.getRepository(entities_1.AlertSnapshotEntity);
-        this.signalRepo = data_source_1.default.getRepository(entities_1.TradeSignalEntity);
+        this.snapshotRepo = data_source_1.default.getRepository(entities_1.AlertSnapshot);
+        this.signalRepo = data_source_1.default.getRepository(entities_1.TradeSignal);
     }
     async logSignal(params) {
         try {
@@ -57,7 +57,7 @@ class TradeDBService {
         try {
             const now = new Date();
             // minimal snapshot, many fields nullable in schema
-            const snapshot = queryRunner.manager.create(entities_1.AlertSnapshotEntity, {
+            const snapshot = queryRunner.manager.create(entities_1.AlertSnapshot, {
                 userId: params.userId,
                 ticker: params.symbol,
                 exchange: params.exchange ?? null,
@@ -74,7 +74,7 @@ class TradeDBService {
             });
             const savedSnap = await queryRunner.manager.save(snapshot);
             const savedSnapId = (Array.isArray(savedSnap) ? savedSnap[0] : savedSnap).id;
-            const signal = queryRunner.manager.create(entities_1.TradeSignalEntity, {
+            const signal = queryRunner.manager.create(entities_1.TradeSignal, {
                 alertSnapshotId: savedSnapId,
                 action: params.side,
                 symbol: params.symbol,
@@ -92,6 +92,14 @@ class TradeDBService {
                 error: error instanceof Error ? error.message : String(error),
             };
         }
+    }
+    async getAllTradeForUser({ userId, start, count }) {
+        return this.signalRepo.find({
+            where: { alertSnapshot: { userId } },
+            order: { createdAt: "DESC" },
+            skip: start,
+            take: count,
+        });
     }
 }
 exports.TradeDBService = TradeDBService;

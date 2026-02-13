@@ -332,8 +332,8 @@ export class AuthController {
   async registerUser(req: Request, res: Response): Promise<Response> {
     const { email } = req.body as { email: string };
 
-    const token = generateVerificationToken();
-
+    const token:any = generateVerificationToken();
+    
     // ✅ Save token in DB with expiry (recommended)
     // await userRepo.save({ email, token, expiresAt })
 

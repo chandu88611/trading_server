@@ -8,6 +8,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  OneToMany,
 } from "typeorm";
 
 import { User } from "./User";
@@ -16,6 +17,8 @@ import {
   ExecutionFlow,
   TradingAccountStatus,
 } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
+import { Broker } from "./Brokers";
+import { TradeSignal } from "./TradeSignals";
 
 @Entity({ name: "user_trading_accounts" })
 export class UserTradingAccount {
@@ -30,7 +33,6 @@ export class UserTradingAccount {
   @JoinColumn({ name: "user_id" })
   user!: User;
 
-  // ✅ NEW: subscription link
   @Index()
   @Column({ name: "subscription_id", type: "bigint", nullable: true })
   subscriptionId!: number | null;
@@ -42,15 +44,20 @@ export class UserTradingAccount {
   @Column({ name: "is_master", type: "boolean", default: false })
   isMaster!: boolean;
 
-  @Column({ name: "broker", type: "text" })
-  broker!: string;
+  @Column({ name: "broker_id", type: "bigint" })
+  brokerId!: number;
+
+  @Column({ name: "account_id", type: "text" })
+  accountId!: string;
+
+  @ManyToOne(()=> Broker, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "broker_id" })
+  broker!: Broker;
 
   @Column({
     name: "execution_flow",
     type: "enum",
     enum: ExecutionFlow,
-    // If your DB enum type name is `execution_flow`, you can add:
-    // enumName: "execution_flow",
   })
   executionFlow!: ExecutionFlow;
 
@@ -67,8 +74,6 @@ export class UserTradingAccount {
     name: "status",
     type: "enum",
     enum: TradingAccountStatus,
-    // If your DB enum type name is `trading_account_status`, you can add:
-    // enumName: "trading_account_status",
     default: TradingAccountStatus.PENDING,
   })
   status!: TradingAccountStatus;
@@ -81,4 +86,13 @@ export class UserTradingAccount {
 
   @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
+
+  @Column({name:"access_token", type: "text"})
+  accessToken!: string;
+
+  @Column({name:"refresh_token", type: "text"})
+  refreshToken!: string;
+
+  @OneToMany(() => TradeSignal, (tradeSignal) => tradeSignal.tradingAccount)
+  tradeSignals!: TradeSignal[];
 }

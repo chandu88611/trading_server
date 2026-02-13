@@ -7,7 +7,7 @@ export class Market {
   id!: number;
 
   @Column({ type: "text", unique: true })
-  code!: string; // FOREX / CRYPTO / INDIAN
+  code!: string;
 
   @Column({ type: "text" })
   name!: string;

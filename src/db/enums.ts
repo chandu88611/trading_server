@@ -50,3 +50,23 @@ export type OAuthExchangeResult = {
   payload?: any;
   error?: string;
 };
+
+export enum UserTradeType{
+  MT5 = "MT5",
+  CTRADER = "CTRADER",
+}
+
+export enum marketDataProviderEnum {
+  FOREX = "FOREX",
+  CRYPTO = "CRYPTO",
+  INDIAN = "INDIAN",
+}
+
+export enum TradingCategory {
+  FOREX = "FOREX",
+  CRYPTO = "CRYPTO",
+  INDEX = "INDEX",
+  COMMODITY = "COMMODITY",
+  STOCK = "STOCK",
+  FUTURES = "FUTURES"
+}

@@ -25,22 +25,12 @@ export class SubscriptionPlanDBService {
   private typeRepo: Repository<PlanType>;
   private marketRepo: Repository<Market>;
 
-  private pricingRepo: Repository<PlanPricing>;
-  private limitsRepo: Repository<PlanLimits>;
-  private featureRepo: Repository<PlanFeature>;
-  private bundleRepo: Repository<PlanBundleItem>;
-  private planStrategyRepo: Repository<PlanStrategy>;
 
   constructor() {
     this.planRepo = AppDataSource.getRepository(SubscriptionPlan);
     this.typeRepo = AppDataSource.getRepository(PlanType);
     this.marketRepo = AppDataSource.getRepository(Market);
 
-    this.pricingRepo = AppDataSource.getRepository(PlanPricing);
-    this.limitsRepo = AppDataSource.getRepository(PlanLimits);
-    this.featureRepo = AppDataSource.getRepository(PlanFeature);
-    this.bundleRepo = AppDataSource.getRepository(PlanBundleItem);
-    this.planStrategyRepo = AppDataSource.getRepository(PlanStrategy);
   }
 
   async createPlan(payload: ICreateSubscriptionPlan) {
@@ -61,17 +51,17 @@ export class SubscriptionPlanDBService {
     return AppDataSource.transaction(async (trx) => {
       const planRepo = trx.getRepository(SubscriptionPlan);
 
-      // BIGINT -> string (SubscriptionPlan.planTypeId/marketId are string)
+      // BIGINT ids (SubscriptionPlan.planTypeId/marketId are numbers)
       const plan = planRepo.create({
         name: payload.name.trim(),
         description: payload.description ?? null,
         isActive: payload.isActive ?? true,
         metadata: payload.metadata ?? {},
-        planTypeId: String((planType as any).id),
-        marketId: market ? String((market as any).id) : null,
-      });
+        planTypeId: (planType as any).id,
+        marketId: market ? (market as any).id : null,
+      } as Partial<SubscriptionPlan>);
 
-      const savedPlan = await planRepo.save(plan);
+      const savedPlan = await planRepo.save(plan as SubscriptionPlan);
 
       // pricing (unique plan_id)
       if (payload.pricing) {
@@ -118,26 +108,26 @@ export class SubscriptionPlanDBService {
         await featureRepo.insert(rows as any);
       }
 
-      // strategies mapping (insert bulk) ✅ FIXES PlanStrategy[][]
+      // strategies mapping (insert bulk)
       if (payload.strategyIds?.length) {
         const psRepo = trx.getRepository(PlanStrategy);
         const uniq = Array.from(new Set(payload.strategyIds));
 
         const rows = uniq.map((sid) => ({
           planId: savedPlan.id,
-          strategyId: String(sid), // BIGINT -> string
+          strategyId: sid,
         }));
 
         await psRepo.insert(rows as any);
       }
 
-      // bundle items (insert bulk) ✅ FIXES PlanBundleItem[][]
+      // bundle items (insert bulk)
       if (payload.bundleItems?.length) {
         const bRepo = trx.getRepository(PlanBundleItem);
 
         const rows = payload.bundleItems.map((bi) => ({
           bundlePlanId: savedPlan.id,
-          includedPlanId: bi.includedPlanId, // (should be uuid string in your model)
+          includedPlanId: bi.includedPlanId,
           quantity: bi.quantity ?? 1,
         }));
 
@@ -148,7 +138,7 @@ export class SubscriptionPlanDBService {
     });
   }
 
-  getPlanById(id: string) {
+  getPlanById(id: number) {
     return this.planRepo.findOne({
       where: { id },
       relations: {
@@ -163,7 +153,7 @@ export class SubscriptionPlanDBService {
     });
   }
 
-  async updatePlan(id: string, payload: IUpdateSubscriptionPlan) {
+  async updatePlan(id: number, payload: IUpdateSubscriptionPlan) {
     return AppDataSource.transaction(async (trx) => {
       const planRepo = trx.getRepository(SubscriptionPlan);
       const updatePlan: Partial<SubscriptionPlan> & Record<string, any> = {};
@@ -179,7 +169,7 @@ export class SubscriptionPlanDBService {
           where: { code: payload.planTypeCode as any },
         });
         if (!pt) throw badRequest(`Invalid planTypeCode=${payload.planTypeCode}`);
-        updatePlan.planTypeId = String((pt as any).id);
+        updatePlan.planTypeId = (pt as any).id;
       }
 
       // marketCode -> id / null
@@ -191,7 +181,7 @@ export class SubscriptionPlanDBService {
             where: { code: payload.marketCode as any },
           });
           if (!mk) throw badRequest(`Invalid marketCode=${payload.marketCode}`);
-          updatePlan.marketId = String((mk as any).id);
+          updatePlan.marketId = (mk as any).id;
         }
       }
 
@@ -271,7 +261,7 @@ export class SubscriptionPlanDBService {
           const uniq = Array.from(new Set(payload.strategyIds));
           const rows = uniq.map((sid) => ({
             planId: id,
-            strategyId: String(sid),
+            strategyId: sid,
           }));
           await psRepo.insert(rows as any);
         }

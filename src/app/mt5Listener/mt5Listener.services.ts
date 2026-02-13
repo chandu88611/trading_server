@@ -6,19 +6,31 @@ export class Mt5ListenerServices {
   ) {}
 
   async getSignalForEA(brokerAccountId: string) {
-    const job = await this.dbService.getNextPendingJob(
+    try {
+         const job = await this.dbService.getNextPendingJob(
       brokerAccountId
     );
     if (!job) return {};
     
-    await this.dbService.markJobInProgress(job.job_id);
+    await this.dbService.markJobInProgress(job);
+    
+    if(job.volume <= 0){
+      await this.dbService.markJobFailed(
+        job,
+        "Invalid volume"
+      );
+      return {};
+    }
 
     return {
-      ackId: job.job_id,                   
-      side: String(job.side).toLowerCase(),
+      ackId: job.id,                   
+      side: String(job.action).toLowerCase(),
       symbol: job.symbol,
-      qty: Number(job.qty) || 0,
-    };
+      qty: Number(job.volume) || 1,
+    }; 
+    } catch (error) {
+      throw error;
+    }
   }
 
   async handleAck(ack: any) {

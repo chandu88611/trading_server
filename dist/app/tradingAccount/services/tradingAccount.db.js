@@ -74,8 +74,29 @@ class TradingAccountDBService {
             };
         }
     }
+    async alreadyMasterAccountExists(userId, broker) {
+        try {
+            const existing = await this.repo.
+                createQueryBuilder("account")
+                .where("account.user_id = :userId", { userId })
+                .andWhere("account.broker = :broker", { broker })
+                .andWhere("account.is_master = :isMaster", { isMaster: true })
+                .getOne();
+            if (existing) {
+                throw {
+                    statusCode: constants_1.HttpStatusCode._CONFLICT,
+                    message: "you already have a master account for this broker cann't create another one",
+                };
+            }
+            return;
+        }
+        catch (error) {
+            throw error;
+        }
+    }
     async createForUserWithRunner(userId, payload, queryRunner) {
         try {
+            await this.alreadyMasterAccountExists(userId, payload.broker ?? "");
             const acc = queryRunner.manager.create(UserTradingAccount_1.UserTradingAccount, {
                 userId,
                 broker: payload.broker ?? "",
@@ -89,12 +110,7 @@ class TradingAccountDBService {
             return await queryRunner.manager.save(acc);
         }
         catch (error) {
-            console.log(error);
-            throw {
-                statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
-                message: "database_error_creating_account",
-                error: error instanceof Error ? error.message : String(error),
-            };
+            throw error;
         }
     }
     async updateForUser(userId, id, payload) {

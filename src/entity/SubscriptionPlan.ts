@@ -24,17 +24,16 @@ import { PlanStrategy } from "./PlanStrategy";
 
 @Entity({ name: "subscription_plans" })
 export class SubscriptionPlan {
-  @PrimaryGeneratedColumn("uuid")
-  id!: string;
+  @PrimaryGeneratedColumn()
+  id!: number;
 
-  // BIGINT in pg -> treat as string in TS to avoid mismatch
   @Index()
   @Column({ name: "plan_type_id", type: "bigint" })
-  planTypeId!: string;
+  planTypeId!: number;
 
   @Index()
   @Column({ name: "market_id", type: "bigint", nullable: true })
-  marketId!: string | null;
+  marketId!: number | null;
 
   @ManyToOne(() => PlanType, (t) => t.plans, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "plan_type_id" })
@@ -68,14 +67,12 @@ export class SubscriptionPlan {
   @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
 
-  // 1-1 children
   @OneToOne(() => PlanPricing, (p) => p.plan)
   pricing?: PlanPricing;
 
   @OneToOne(() => PlanLimits, (l) => l.plan)
   limits?: PlanLimits;
 
-  // 1-many children
   @OneToMany(() => PlanFeature, (f) => f.plan)
   features?: PlanFeature[];
 

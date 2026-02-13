@@ -1,59 +1,60 @@
-import { DataSource } from "typeorm";
+import { DataSource, Repository } from "typeorm";
+import { Broker } from "../../entity/Brokers";
+import { UserTradingAccount } from "../../entity/UserTradingAccount";
+import { TradeSignal } from "../../entity/TradeSignals";
 
 export class Mt5ListenerDBServices {
-  constructor(private readonly dataSource: DataSource) {}
+  private broker:Repository<Broker>;
+  private userTradingAccount:Repository<UserTradingAccount>;
+  private tradeSignal:Repository<TradeSignal>;
+
+  constructor(private readonly dataSource: DataSource) {
+    this.broker = this.dataSource.getRepository(Broker);
+    this.userTradingAccount = this.dataSource.getRepository(UserTradingAccount);
+    this.tradeSignal = this.dataSource.getRepository(TradeSignal);
+  }
 
   async getNextPendingJob(brokerAccountId: string) {
-    const sql = `
-      SELECT
-        bj.id              AS job_id,
-        ts.action          AS side,
-        ts.symbol,
-        ts.price,
-        COALESCE((bj.payload->>'qty')::numeric, 0) AS qty
-      FROM broker_jobs bj
-      JOIN broker_credentials bc ON bc.id = bj.credential_id
-      JOIN trade_signals ts ON ts.job_id = bj.id
-      WHERE
-        bc.broker_account_id = $1     -- 🔴 MT5 login
-        AND bj.status = 'pending'
-      ORDER BY bj.created_at ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    `;
+    
 
-    const rows = await this.dataSource.manager.query(sql, [
-      brokerAccountId,
-    ]);
-    console.log("Rows Fetched ::: ",rows);
+    const rows = await this.tradeSignal.createQueryBuilder("trade_signal")
+    .leftJoinAndSelect("trade_signal.tradingAccount", "uta")
+    .leftJoinAndSelect("trade_signal.status", "tss")
+    .leftJoinAndSelect("uta.broker", "b")
+    .where("b.id = :brokerId", { brokerId: 1 })
+    .andWhere("uta.account_id = :accountId", { accountId: brokerAccountId })
+    .andWhere("tss.status = :status", { status: "pending" })
+    .orderBy("trade_signal.created_at", "ASC")
+    .getMany();
 
-    return rows[0] ?? null;
+
+    return rows.length > 0 ? rows[0] : null;
   }
 
-  async markJobInProgress(jobId: number) {
+  async markJobInProgress(job: TradeSignal) {
     await this.dataSource.manager.query(
-      `UPDATE broker_jobs SET status='in_progress' WHERE id=$1`,
-      [jobId]
+      `UPDATE trade_signals_status SET status='in_progress' WHERE id=$1`,
+      [job.status.id]
     );
   }
 
-  async markJobSuccess(jobId: number) {
+  async markJobSuccess(job: TradeSignal) {
     await this.dataSource.manager.query(
-      `UPDATE broker_jobs SET status='completed' WHERE id=$1`,
-      [jobId]
+      `UPDATE trade_signals_status SET status='completed' WHERE id=$1`,
+      [job.status.id]
     );
   }
 
-  async markJobFailed(jobId: number, error: string) {
+  async markJobFailed(job: TradeSignal, error: string) {
     await this.dataSource.manager.query(
       `
-      UPDATE broker_jobs
+      UPDATE trade_signals_status
       SET status='failed',
           last_error=$2,
           attempts=attempts+1
       WHERE id=$1
       `,
-      [jobId, error]
+      [job.status.id, error]
     );
   }
 }

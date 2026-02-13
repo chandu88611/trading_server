@@ -55,13 +55,8 @@ class TradingAccountService {
             return account;
         }
         catch (error) {
-            console.log(error);
             await queryRunner.rollbackTransaction();
-            throw {
-                statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
-                message: "failed_to_create_trading_account",
-                error: error instanceof Error ? error.message : String(error),
-            };
+            throw error;
         }
         finally {
             await queryRunner.release();

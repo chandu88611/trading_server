@@ -7,11 +7,20 @@ exports.AlertSnapshotDB = void 0;
 const data_source_1 = __importDefault(require("../../../../db/data-source"));
 const AlertSnapshots_1 = require("../../../../entity/AlertSnapshots");
 const entity_1 = require("../../../../entity");
+const enums_1 = require("../../../../db/enums");
+const ForexTraderUserDetails_1 = require("../../../../entity/ForexTraderUserDetails");
+const tradeSignal_service_1 = require("../../brokerSignals/services/tradeSignal.service");
+const BrokerJob_1 = require("../../../../entity/BrokerJob");
+const cTrader_1 = require("../../../cTraderListener/services/cTrader");
 const OPEN_STATUSES = ["pending", "running", "queued"];
 class AlertSnapshotDB {
     constructor() {
         this.repo = data_source_1.default.getRepository(AlertSnapshots_1.AlertSnapshot);
         this.jobRepo = data_source_1.default.getRepository(entity_1.BrokerJob);
+        this.forexTraderUserDetails = data_source_1.default.getRepository(ForexTraderUserDetails_1.ForexTraderUserDetails);
+        this.tradeSignalService = new tradeSignal_service_1.TradeSignalService();
+        this.forexTradeStatus = data_source_1.default.getRepository(BrokerJob_1.ForexTradeStatus);
+        this.cTraderService = new cTrader_1.CTraderService();
     }
     async create(payload, brokerJobId, queryRunner) {
         try {
@@ -202,6 +211,64 @@ class AlertSnapshotDB {
                 .limit(limit)
                 .getRawMany();
             return { page, limit, total, rows };
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async getAllTradeTypeForUser(userId) {
+        try {
+            const forexDetails = await this.forexTraderUserDetails.find({
+                where: { userId: userId.toString() },
+            });
+            const result = forexDetails.map((detail) => {
+                return {
+                    id: Number(detail.id),
+                    type: detail.forexType === "MT5" ? enums_1.UserTradeType.MT5 : enums_1.UserTradeType.CTRADER,
+                    forexTraderUserId: detail.forexTraderUserId,
+                };
+            });
+            return result;
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async createBrokerJobTradeAndStatus(credentialdata, payload, queryRunner) {
+        try {
+            for (const credential of credentialdata) {
+                const brokerJob = this.jobRepo.create({
+                    type: "FOREX_TRADE_SIGNAL",
+                    payload: payload,
+                    status: "pending",
+                    attempts: 0,
+                });
+                const savedJob = await queryRunner.manager
+                    .getRepository(entity_1.BrokerJob)
+                    .save(brokerJob);
+                let alertData = await this.create(payload, savedJob.id, queryRunner);
+                let tradePayload = {
+                    jobId: savedJob.id,
+                    action: payload.action,
+                    symbol: alertData.ticker,
+                    price: alertData.close,
+                    exchange: alertData.exchange,
+                    signalTime: alertData.createdAt,
+                };
+                if (credential.type === enums_1.UserTradeType.MT5) {
+                    await this.tradeSignalService.createTradeSignal(tradePayload, queryRunner);
+                }
+                else if (credential.type === enums_1.UserTradeType.CTRADER) {
+                    await this.cTraderService.createTradeSignal(tradePayload, queryRunner);
+                }
+                const forexTradeStatusRepo = this.forexTradeStatus.create({
+                    brokerJobId: savedJob.id,
+                    forexTraderUserId: Number(credential.forexTraderUserId),
+                });
+                await queryRunner.manager
+                    .getRepository(BrokerJob_1.ForexTradeStatus)
+                    .save(forexTradeStatusRepo);
+            }
         }
         catch (error) {
             throw error;

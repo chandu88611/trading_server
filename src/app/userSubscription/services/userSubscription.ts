@@ -3,7 +3,7 @@ import {
   IUserSubscribePayload,
   IUserSubscriptionCancelPayload,
 } from "../interfaces/userSubscription.interface";
-import { AssetType } from "../../../types/trade-identify";
+import { AssetType, MarketType } from "../../../types/trade-identify";
 
 export class UserSubscriptionService {
   private db: UserSubscriptionDBService;
@@ -15,14 +15,14 @@ export class UserSubscriptionService {
   async subscribe(userId: number, payload: IUserSubscribePayload) {
     const { planId } = payload;
 
-    if (!planId?.trim()) throw new Error("planId is required");
+    if (!planId) throw new Error("planId is required");
 
     const plan = await this.db.getPlan(planId);
     if (!plan) throw new Error("Invalid or inactive subscription plan");
 
     const existing = await this.db.getActiveSubscription(userId);
-    if (existing) throw new Error("User already has an active subscription");
 
+    if (existing?.length !== 0) throw new Error("User already has an active subscription");
     // NEW DESIGN: interval comes from pricing.interval
     const interval = (plan as any).pricing?.interval ?? "monthly";
 
@@ -44,8 +44,8 @@ export class UserSubscriptionService {
     await this.db.cancelSubscriptionNow(userId);
   }
 
-  getCurrentSubscription(userId: number) {
-    return this.db.getActiveSubscription(userId);
+  getCurrentSubscription(userId: number, start: number, count: number, searchParams?: any) {
+    return this.db.getActiveSubscriptionCurrent(userId, start, count, searchParams);
   }
 
   getAllSubscriptions(offset = 0, limit = 20) {
@@ -56,7 +56,7 @@ export class UserSubscriptionService {
     return this.db.getUserSubscriptions(userId);
   }
 
-  async subscriberPlanValidation(userId: number, assetType: AssetType) {
-    return this.db.subscriberPlanValidation(userId, assetType);
+  async subscriberPlanValidation(userId: number, marketType: MarketType) {
+    return this.db.subscriberPlanValidation(userId, marketType);
   }
 }

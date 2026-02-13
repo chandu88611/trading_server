@@ -4,10 +4,6 @@ import dotenv from "dotenv";
 import {
   User,
   AuthProvider,
-  BrokerCredential,
-  BrokerEvent,
-  BrokerJob,
-  BrokerSession,
   RefreshToken,
   SubscriptionInvoice,
   SubscriptionPayment,
@@ -18,13 +14,10 @@ import {
 import { AlertSnapshot } from "../entity/AlertSnapshots";
 import { TradeSignal } from "../entity/TradeSignals";
 import { UserBillingDetails } from "../entity/UserBillingDetails";
-import { CopyMasterEvent } from "../entity/CopyMasterEvent";
-import { CopyTradeTask } from "../entity/CopyTradeTask";
-import { CopyTradingFollow } from "../entity/CopyTradingFollow";
+import { CopyTradingFollowers } from "../entity/CopyTradingFollow";
 import { CopyTradingMaster } from "../entity/CopyTradingMaster";
 import { UserTradingAccount } from "../entity/UserTradingAccount";
 import { Strategy } from "../entity/Strategy";
-import { ForexTraderUserDetails } from "../entity/ForexTraderUserDetails";
 import { PlanType } from "../entity/PlanType";
 import { Market } from "../entity/Market";
 import { PlanPricing } from "../entity/PlanPricing";
@@ -32,7 +25,10 @@ import { PlanLimits } from "../entity/PlanLimits";
 import { PlanFeature } from "../entity/PlanFeature";
 import { PlanBundleItem } from "../entity/PlanBundleItem";
 import { PlanStrategy } from "../entity/PlanStrategy";
-import { CTradeSignal, CTradeSignalStatus } from "../entity/CTradeSignals";
+import { TradeSignalStatus } from "../entity/TradeSignalsStatus";
+import { Broker } from "../entity/Brokers";
+import { CTraderSession } from "../entity/CTraderSession";
+import { CTraderSymbol } from "../entity/CTraderSymbol";
 
 dotenv.config();
 
@@ -50,10 +46,6 @@ export const AppDataSource = new DataSource({
   entities: [
     User,
     AuthProvider,
-    BrokerCredential,
-    BrokerSession,
-    BrokerJob,
-    BrokerEvent,
     RefreshToken,
     AlertSnapshot,
     SubscriptionInvoice,
@@ -63,13 +55,10 @@ export const AppDataSource = new DataSource({
     UserSubscription,
     UserBillingDetails,
     UserTradingAccount,
-    CopyMasterEvent,
-    CopyTradeTask,
-    CopyTradingFollow,
+    CopyTradingFollowers,
     CopyTradingMaster,
     Strategy,
-    ForexTraderUserDetails,
-
+    TradeSignalStatus,
     PlanType,
     Market,
     PlanPricing,
@@ -77,8 +66,9 @@ export const AppDataSource = new DataSource({
     PlanFeature,
     PlanBundleItem,
     PlanStrategy,
-    CTradeSignal,
-    CTradeSignalStatus
+    Broker,
+    CTraderSession,
+    CTraderSymbol,
   ],
   migrations: [],
   subscribers: [],

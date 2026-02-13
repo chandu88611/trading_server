@@ -8,6 +8,7 @@ const data_source_1 = __importDefault(require("../../../../db/data-source"));
 const constants_1 = require("../../../../types/constants");
 const trade_identify_1 = require("../../../../types/trade-identify");
 const copyTrading_service_1 = require("../../../copyTrading/services/copyTrading.service");
+const cTrader_1 = require("../../../cTraderListener/services/cTrader");
 const userSubscription_1 = require("../../../userSubscription/services/userSubscription");
 const brokerCredential_service_1 = require("../../brokerCredentials/services/brokerCredential.service");
 const brokerJob_service_1 = require("../../brokerJobs/services/brokerJob.service");
@@ -21,13 +22,14 @@ class AlertSnapshotService {
         this.tradeSignalService = new tradeSignal_service_1.TradeSignalService();
         this.userSubscriptionService = new userSubscription_1.UserSubscriptionService();
         this.copyTradingService = new copyTrading_service_1.CopyTradingService();
+        this.cTraderService = new cTrader_1.CTraderService();
     }
     async create(payload) {
         const queryRunner = data_source_1.default.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
         try {
-            let credentialId = await this.brokerCredentialService.getCredentialIdByUserId(payload.userId);
+            let credentialdata = await this.alertSnapshotDB.getAllTradeTypeForUser(payload.userId);
             let assetType = trade_identify_1.AssetClassifier.detect({
                 symbol: payload.ticker,
                 exchange: payload.exchange,
@@ -38,57 +40,17 @@ class AlertSnapshotService {
                     message: "unsupported_asset_type",
                 };
             }
-            // let isValidPlan =
-            //   await this.userSubscriptionService.subscriberPlanValidation(
-            //     payload.userId,
-            //     assetType
-            //   );
-            // if (!isValidPlan) {
-            //   throw {
-            //     status: HttpStatusCode._BAD_REQUEST,
-            //     message: "invalid_subscription_plan",
-            //   };
-            // }
-            if (credentialId && credentialId > 0 && credentialId !== undefined) {
-                let brockerJobId = await this.brokerJobService.getOrCreateBrokerJobId({
-                    credentialId: credentialId,
-                    type: "trade",
-                    payload,
-                }, queryRunner);
-                if (brockerJobId && brockerJobId > 0 && brockerJobId !== undefined) {
-                    let alertData = await this.alertSnapshotDB.create(payload, brockerJobId, queryRunner);
-                    let tradePayload = {
-                        jobId: brockerJobId,
-                        action: payload.action,
-                        symbol: alertData.ticker,
-                        price: alertData.close,
-                        exchange: alertData.exchange,
-                        signalTime: alertData.createdAt,
-                    };
-                    await this.tradeSignalService.createTradeSignal(tradePayload, queryRunner);
-                    // await this.copyTradingService.fanoutFromMasterSignal(
-                    //   {
-                    //     userId: payload.userId,
-                    //     brokerJobId: brockerJobId,
-                    //     alertSnapshotId: alertData.id,
-                    //     action: payload.action,
-                    //     symbol: alertData.ticker,
-                    //     exchange: alertData.exchange,
-                    //     price: alertData.close,
-                    //     signalTime: alertData.createdAt!,
-                    //   },
-                    //   queryRunner
-                    // );
-                    await queryRunner.commitTransaction();
-                    return alertData;
-                }
-                else {
-                    throw {
-                        status: constants_1.HttpStatusCode._BAD_REQUEST,
-                        message: "broker_job_creation_failed",
-                    };
-                }
+            let isValidPlan = await this.userSubscriptionService.subscriberPlanValidation(payload.userId, assetType);
+            if (!isValidPlan) {
+                throw {
+                    status: constants_1.HttpStatusCode._BAD_REQUEST,
+                    message: "invalid_subscription_plan",
+                };
             }
+            if (credentialdata.length > 0) {
+                await this.attendAlertForForexTrader(credentialdata, payload, queryRunner);
+            }
+            await queryRunner.commitTransaction();
         }
         catch (error) {
             await queryRunner.rollbackTransaction();
@@ -96,6 +58,14 @@ class AlertSnapshotService {
         }
         finally {
             await queryRunner.release();
+        }
+    }
+    async attendAlertForForexTrader(credentialdata, payload, queryRunner) {
+        try {
+            await this.alertSnapshotDB.createBrokerJobTradeAndStatus(credentialdata, payload, queryRunner);
+        }
+        catch (error) {
+            throw error;
         }
     }
     async getAlertHistory(userId, q) {

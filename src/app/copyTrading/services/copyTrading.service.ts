@@ -1,305 +1,284 @@
-import AppDataSource from "../../../db/data-source";
-import { QueryRunner } from "typeorm";
-import { HttpStatusCode } from "../../../types/constants";
-import { CopyTradingDBService } from "./copyTrading.db";
-import { CopyEventType, CopyTradeSide } from "../../../entity/CopyMasterEvent";
+// import AppDataSource from "../../../db/data-source";
+// import { QueryRunner } from "typeorm";
+// import { HttpStatusCode } from "../../../types/constants";
+// import { CopyTradingDBService } from "./copyTrading.db";
 
-function normalizeAction(action?: string) {
-  return String(action || "")
-    .trim()
-    .toUpperCase();
-}
+// function normalizeAction(action?: string) {
+//   return String(action || "")
+//     .trim()
+//     .toUpperCase();
+// }
 
-function mapToCopyEvent(action?: string): {
-  eventType: CopyEventType;
-  side: CopyTradeSide | null;
-} {
-  const a = normalizeAction(action);
 
-  if (a === "BUY" || a === "LONG")
-    return { eventType: CopyEventType.OPEN, side: CopyTradeSide.BUY };
-  if (a === "SELL" || a === "SHORT")
-    return { eventType: CopyEventType.OPEN, side: CopyTradeSide.SELL };
+// export class CopyTradingService {
+//   private dbService: CopyTradingDBService;
 
-  if (a.includes("CLOSE"))
-    return { eventType: CopyEventType.CLOSE, side: null };
-  if (a.includes("MODIFY"))
-    return { eventType: CopyEventType.MODIFY, side: null };
-  if (a.includes("PARTIAL"))
-    return { eventType: CopyEventType.PARTIAL_CLOSE, side: null };
+//   constructor() {
+//     this.dbService = new CopyTradingDBService();
+//   }
 
-  return { eventType: CopyEventType.OPEN, side: null };
-}
+//   // ---------------------------
+//   // READ APIs
+//   // ---------------------------
 
-export class CopyTradingService {
-  private dbService: CopyTradingDBService;
+//   async getMyMaster(userId: number) {
+//     try {
+//       if (!userId)
+//         throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//       return this.dbService.getMyMaster(userId);
+//     } catch (error) {
+//       throw error;
+//     }
+//   }
 
-  constructor() {
-    this.dbService = new CopyTradingDBService();
-  }
+//   async listMasters(args: {
+//     viewerUserId?: number;
+//     visibility?: "public" | "unlisted" | "private";
+//     page: number;
+//     limit: number;
+//   }) {
+//     return this.dbService.listMasters(args);
+//   }
 
-  // ---------------------------
-  // READ APIs
-  // ---------------------------
+//   async listMyFollows(args: {
+//     followerUserId: number;
+//     page: number;
+//     limit: number;
+//     status?: string;
+//   }) {
+//     if (!args.followerUserId)
+//       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
 
-  async getMyMaster(userId: number) {
-    try {
-      if (!userId)
-        throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-      return this.dbService.getMyMaster(userId);
-    } catch (error) {
-      throw error;
-    }
-  }
+//     return this.dbService.listMyFollows(args);
+//   }
 
-  async listMasters(args: {
-    viewerUserId?: number;
-    visibility?: "public" | "unlisted" | "private";
-    page: number;
-    limit: number;
-  }) {
-    return this.dbService.listMasters(args);
-  }
+//   async listMyFollowers(args: {
+//     ownerUserId: number;
+//     page: number;
+//     limit: number;
+//     status?: string;
+//   }) {
+//     if (!args.ownerUserId)
+//       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
 
-  async listMyFollows(args: {
-    followerUserId: number;
-    page: number;
-    limit: number;
-    status?: string;
-  }) {
-    if (!args.followerUserId)
-      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//     return this.dbService.listMyFollowers(args);
+//   }
 
-    return this.dbService.listMyFollows(args);
-  }
+//   // ---------------------------
+//   // WRITE APIs (Transaction)
+//   // ---------------------------
 
-  async listMyFollowers(args: {
-    ownerUserId: number;
-    page: number;
-    limit: number;
-    status?: string;
-  }) {
-    if (!args.ownerUserId)
-      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//   async upsertMyMaster(args: {
+//     userId: number;
+//     tradingAccountId: number;
+//     name?: string;
+//     description?: string | null;
+//     visibility?: "private" | "unlisted" | "public";
+//     requiresApproval?: boolean;
+//   }) {
+//     if (!args.userId)
+//       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//     if (!args.tradingAccountId)
+//       throw {
+//         status: HttpStatusCode._BAD_REQUEST,
+//         message: "tradingAccountId_required",
+//       };
 
-    return this.dbService.listMyFollowers(args);
-  }
+//     const qr = AppDataSource.createQueryRunner();
+//     await qr.connect();
+//     await qr.startTransaction();
+//     try {
+//       const out = await this.dbService.upsertMyMaster(args, qr);
+//       await qr.commitTransaction();
+//       return out;
+//     } catch (e) {
+//       await qr.rollbackTransaction();
+//       throw e;
+//     } finally {
+//       await qr.release();
+//     }
+//   }
 
-  // ---------------------------
-  // WRITE APIs (Transaction)
-  // ---------------------------
+//   async followMaster(args: {
+//     followerUserId: number;
+//     masterId: number;
+//     followerTradingAccountId: number;
+//     subscriptionId?: number;
 
-  async upsertMyMaster(args: {
-    userId: number;
-    tradingAccountId: number;
-    name?: string;
-    description?: string | null;
-    visibility?: "private" | "unlisted" | "public";
-    requiresApproval?: boolean;
-  }) {
-    if (!args.userId)
-      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-    if (!args.tradingAccountId)
-      throw {
-        status: HttpStatusCode._BAD_REQUEST,
-        message: "tradingAccountId_required",
-      };
+//     riskMode?: string;
+//     riskValue?: any;
+//     maxLot?: any;
+//     maxOpenPositions?: any;
+//     maxDailyLoss?: any;
+//     slippageTolerance?: any;
+//     symbolWhitelist?: string[];
+//   }) {
+//     if (!args.followerUserId)
+//       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
 
-    const qr = AppDataSource.createQueryRunner();
-    await qr.connect();
-    await qr.startTransaction();
-    try {
-      const out = await this.dbService.upsertMyMaster(args, qr);
-      await qr.commitTransaction();
-      return out;
-    } catch (e) {
-      await qr.rollbackTransaction();
-      throw e;
-    } finally {
-      await qr.release();
-    }
-  }
+//     if (!args.masterId || !args.followerTradingAccountId) {
+//       throw {
+//         status: HttpStatusCode._BAD_REQUEST,
+//         message: "masterId_and_followerTradingAccountId_required",
+//       };
+//     }
 
-  async followMaster(args: {
-    followerUserId: number;
-    masterId: number;
-    followerTradingAccountId: number;
-    subscriptionId?: number;
+//     const qr = AppDataSource.createQueryRunner();
+//     await qr.connect();
+//     await qr.startTransaction();
+//     try {
+//       const out = await this.dbService.followMaster(args, qr);
+//       await qr.commitTransaction();
+//       return out;
+//     } catch (e) {
+//       await qr.rollbackTransaction();
+//       throw e;
+//     } finally {
+//       await qr.release();
+//     }
+//   }
 
-    riskMode?: string;
-    riskValue?: any;
-    maxLot?: any;
-    maxOpenPositions?: any;
-    maxDailyLoss?: any;
-    slippageTolerance?: any;
-    symbolWhitelist?: string[];
-  }) {
-    if (!args.followerUserId)
-      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//   async updateMyFollow(args: {
+//     followerUserId: number;
+//     followId: number;
 
-    if (!args.masterId || !args.followerTradingAccountId) {
-      throw {
-        status: HttpStatusCode._BAD_REQUEST,
-        message: "masterId_and_followerTradingAccountId_required",
-      };
-    }
+//     status?: string;
+//     riskMode?: string;
+//     riskValue?: any;
+//     maxLot?: any;
+//     maxOpenPositions?: any;
+//     maxDailyLoss?: any;
+//     slippageTolerance?: any;
+//     symbolWhitelist?: string[];
+//   }) {
+//     if (!args.followerUserId)
+//       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//     if (!args.followId)
+//       throw {
+//         status: HttpStatusCode._BAD_REQUEST,
+//         message: "followId_required",
+//       };
 
-    const qr = AppDataSource.createQueryRunner();
-    await qr.connect();
-    await qr.startTransaction();
-    try {
-      const out = await this.dbService.followMaster(args, qr);
-      await qr.commitTransaction();
-      return out;
-    } catch (e) {
-      await qr.rollbackTransaction();
-      throw e;
-    } finally {
-      await qr.release();
-    }
-  }
+//     const qr = AppDataSource.createQueryRunner();
+//     await qr.connect();
+//     await qr.startTransaction();
+//     try {
+//       const out = await this.dbService.updateMyFollow(args, qr);
+//       await qr.commitTransaction();
+//       return out;
+//     } catch (e) {
+//       await qr.rollbackTransaction();
+//       throw e;
+//     } finally {
+//       await qr.release();
+//     }
+//   }
 
-  async updateMyFollow(args: {
-    followerUserId: number;
-    followId: number;
+//   async decideFollowerRequest(args: {
+//     ownerUserId: number;
+//     followId: number;
+//     action: "approve" | "reject";
+//   }) {
+//     if (!args.ownerUserId)
+//       throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
+//     if (!args.followId)
+//       throw {
+//         status: HttpStatusCode._BAD_REQUEST,
+//         message: "followId_required",
+//       };
 
-    status?: string;
-    riskMode?: string;
-    riskValue?: any;
-    maxLot?: any;
-    maxOpenPositions?: any;
-    maxDailyLoss?: any;
-    slippageTolerance?: any;
-    symbolWhitelist?: string[];
-  }) {
-    if (!args.followerUserId)
-      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-    if (!args.followId)
-      throw {
-        status: HttpStatusCode._BAD_REQUEST,
-        message: "followId_required",
-      };
+//     const qr = AppDataSource.createQueryRunner();
+//     await qr.connect();
+//     await qr.startTransaction();
+//     try {
+//       const out = await this.dbService.decideFollowerRequest(args, qr);
+//       await qr.commitTransaction();
+//       return out;
+//     } catch (e) {
+//       await qr.rollbackTransaction();
+//       throw e;
+//     } finally {
+//       await qr.release();
+//     }
+//   }
 
-    const qr = AppDataSource.createQueryRunner();
-    await qr.connect();
-    await qr.startTransaction();
-    try {
-      const out = await this.dbService.updateMyFollow(args, qr);
-      await qr.commitTransaction();
-      return out;
-    } catch (e) {
-      await qr.rollbackTransaction();
-      throw e;
-    } finally {
-      await qr.release();
-    }
-  }
+//   // ---------------------------
+//   // EXISTING: Master signal -> follower tasks
+//   // ---------------------------
 
-  async decideFollowerRequest(args: {
-    ownerUserId: number;
-    followId: number;
-    action: "approve" | "reject";
-  }) {
-    if (!args.ownerUserId)
-      throw { status: HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-    if (!args.followId)
-      throw {
-        status: HttpStatusCode._BAD_REQUEST,
-        message: "followId_required",
-      };
+//   // async fanoutFromMasterSignal(
+//   //   args: {
+//   //     userId: number;
+//   //     brokerJobId: number;
+//   //     alertSnapshotId: number;
+//   //     action: string;
+//   //     symbol: string;
+//   //     exchange?: string;
+//   //     price?: number | string | null;
+//   //     signalTime: Date;
+//   //   },
+//   //   queryRunner?: QueryRunner
+//   // ) {
+//   //   const master = await this.dbService.getOrCreateDefaultMasterForUser(
+//   //     args.userId,
+//   //     queryRunner
+//   //   );
 
-    const qr = AppDataSource.createQueryRunner();
-    await qr.connect();
-    await qr.startTransaction();
-    try {
-      const out = await this.dbService.decideFollowerRequest(args, qr);
-      await qr.commitTransaction();
-      return out;
-    } catch (e) {
-      await qr.rollbackTransaction();
-      throw e;
-    } finally {
-      await qr.release();
-    }
-  }
+//   //   const { eventType, side } = mapToCopyEvent(args.action);
 
-  // ---------------------------
-  // EXISTING: Master signal -> follower tasks
-  // ---------------------------
+//   //   const masterOrderRef = `job:${args.brokerJobId}:alert:${args.alertSnapshotId}`;
 
-  async fanoutFromMasterSignal(
-    args: {
-      userId: number;
-      brokerJobId: number;
-      alertSnapshotId: number;
-      action: string;
-      symbol: string;
-      exchange?: string;
-      price?: number | string | null;
-      signalTime: Date;
-    },
-    queryRunner?: QueryRunner
-  ) {
-    const master = await this.dbService.getOrCreateDefaultMasterForUser(
-      args.userId,
-      queryRunner
-    );
+//   //   const masterEvent = await this.dbService.createMasterEvent(
+//   //     {
+//   //       masterId: Number(master.id),
+//   //       eventType,
+//   //       symbol: args.symbol,
+//   //       side,
+//   //       price: args.price ?? null,
+//   //       signalTime: args.signalTime,
+//   //       masterOrderRef,
+//   //       payload: {
+//   //         source: "alert_snapshot",
+//   //         brokerJobId: args.brokerJobId,
+//   //         alertSnapshotId: args.alertSnapshotId,
+//   //         action: args.action,
+//   //         symbol: args.symbol,
+//   //         exchange: args.exchange,
+//   //         price: args.price ?? null,
+//   //         signalTime: args.signalTime,
+//   //       },
+//   //     },
+//   //     queryRunner
+//   //   );
 
-    const { eventType, side } = mapToCopyEvent(args.action);
+//   //   const follows = await this.dbService.getEligibleFollows(
+//   //     Number(master.id),
+//   //     args.symbol,
+//   //     queryRunner
+//   //   );
 
-    const masterOrderRef = `job:${args.brokerJobId}:alert:${args.alertSnapshotId}`;
+//   //   const payloadBase = {
+//   //     master: { id: master.id, ownerUserId: master.ownerUserId },
+//   //     masterEvent: {
+//   //       id: masterEvent.id,
+//   //       type: masterEvent.eventType,
+//   //       symbol: masterEvent.symbol,
+//   //       side: masterEvent.side,
+//   //       price: masterEvent.price,
+//   //       masterOrderRef: masterEvent.masterOrderRef,
+//   //       signalTime: masterEvent.signalTime,
+//   //     },
+//   //   };
 
-    const masterEvent = await this.dbService.createMasterEvent(
-      {
-        masterId: Number(master.id),
-        eventType,
-        symbol: args.symbol,
-        side,
-        price: args.price ?? null,
-        signalTime: args.signalTime,
-        masterOrderRef,
-        payload: {
-          source: "alert_snapshot",
-          brokerJobId: args.brokerJobId,
-          alertSnapshotId: args.alertSnapshotId,
-          action: args.action,
-          symbol: args.symbol,
-          exchange: args.exchange,
-          price: args.price ?? null,
-          signalTime: args.signalTime,
-        },
-      },
-      queryRunner
-    );
+//   //   const res = await this.dbService.enqueueTasks(
+//   //     { masterEventId: Number(masterEvent.id), follows, payloadBase },
+//   //     queryRunner
+//   //   );
 
-    const follows = await this.dbService.getEligibleFollows(
-      Number(master.id),
-      args.symbol,
-      queryRunner
-    );
-
-    const payloadBase = {
-      master: { id: master.id, ownerUserId: master.ownerUserId },
-      masterEvent: {
-        id: masterEvent.id,
-        type: masterEvent.eventType,
-        symbol: masterEvent.symbol,
-        side: masterEvent.side,
-        price: masterEvent.price,
-        masterOrderRef: masterEvent.masterOrderRef,
-        signalTime: masterEvent.signalTime,
-      },
-    };
-
-    const res = await this.dbService.enqueueTasks(
-      { masterEventId: Number(masterEvent.id), follows, payloadBase },
-      queryRunner
-    );
-
-    return {
-      masterId: master.id,
-      masterEventId: masterEvent.id,
-      queued: res.queued,
-    };
-  }
-}
+//   //   return {
+//   //     masterId: master.id,
+//   //     masterEventId: masterEvent.id,
+//   //     queued: res.queued,
+//   //   };
+//   // }
+// }

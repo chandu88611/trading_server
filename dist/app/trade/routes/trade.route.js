@@ -11,8 +11,11 @@ class TradeRouter {
         this.controller = new trade_controller_1.TradeController();
         // Create a new trade
         this.routes.post("/", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), this.controller.create.bind(this.controller));
+        // Get all trades for a user
+        this.routes.get("/all", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), this.controller.getAllTrades.bind(this.controller));
         // TODO: Add endpoints for:
         // GET /trades - list user trades with pagination and filters
+        this.routes.get("/", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), this.controller.getAllTrades.bind(this.controller));
         // GET /trades/:id - get trade details
         // GET /trades/history - get trade history with stats
     }

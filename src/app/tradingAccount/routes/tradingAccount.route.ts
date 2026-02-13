@@ -42,6 +42,24 @@ export class TradingAccountRouter {
       requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.deleteMyAccount.bind(this.controller)
     );
+
+    this.routes.post(
+      "/allow-copy-trading",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.allowCopyTrading.bind(this.controller)
+    )
+
+    this.routes.get(
+      "/copy-trading-requests",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.getCopyTradingRequests.bind(this.controller)
+    )
+
+    this.routes.post(
+      "/handle-copy-trading-request",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.handleCopyTradingRequest.bind(this.controller)
+    )
   }
 
   getRouter() {

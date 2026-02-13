@@ -14,8 +14,7 @@ class Mt5ListenerController {
             const signal = await this.service.getSignalForEA(brokerAccountId);
             if (signal && signal.ackId) {
                 signal.ackId = Number(signal.ackId || 0);
-                signal.qty =
-                    1;
+                signal.qty = 0.01;
             }
             console.log("Signal to be sent ::: ", signal);
             return res.json(signal);

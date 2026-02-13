@@ -174,7 +174,7 @@ export interface WebhookAuthRequest extends Request {
   webhookAuth?: {
     userId: string;
     subscriptionId?: string;
-    planId?: string;
+    planId?: number;
   };
 }
 

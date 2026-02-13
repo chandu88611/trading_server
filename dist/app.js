@@ -13,10 +13,9 @@ const routes_1 = require("./app/routes");
 const cors_1 = __importDefault(require("cors"));
 const body_parser_1 = __importDefault(require("body-parser"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
-const axios_1 = __importDefault(require("axios"));
 const ws_1 = __importDefault(require("ws"));
 const crypto_1 = __importDefault(require("crypto"));
-require("./cron/ctrader-health.cron");
+require("./cron/ctrader-exec.worker");
 dotenv_1.default.config();
 const CTRADER_CLIENT_ID = (process.env.CTRADER_CLIENT_ID || "").trim();
 const CTRADER_CLIENT_SECRET = (process.env.CTRADER_CLIENT_SECRET || "").trim();
@@ -46,7 +45,6 @@ class Server {
     }
     wsEndpoint(env) {
         const e = (env || "demo").toLowerCase() === "live" ? "live" : "demo";
-        // JSON endpoint uses 5036
         return `wss://${e}.ctraderapi.com:5036`;
     }
     uid() {
@@ -175,58 +173,62 @@ class Server {
         }));
         this.app.use("/", new routes_1.ApplicationRouter().getRouter());
         this.app.get("/health", (_, res) => res.send("OK"));
-        this.app.get("/ctrader/auth", (_req, res) => {
-            if (!CTRADER_CLIENT_ID ||
-                !CTRADER_CLIENT_SECRET ||
-                !CTRADER_REDIRECT_URI) {
-                return res.status(500).json({
-                    ok: false,
-                    message: "Missing CTRADER_CLIENT_ID / CTRADER_CLIENT_SECRET / CTRADER_REDIRECT_URI in env",
-                });
-            }
-            const url = new URL(GRANT_URL);
-            url.searchParams.set("client_id", CTRADER_CLIENT_ID);
-            url.searchParams.set("redirect_uri", CTRADER_REDIRECT_URI);
-            url.searchParams.set("scope", "trading");
-            url.searchParams.set("product", "web");
-            return res.redirect(url.toString());
-        });
-        this.app.get("/ctrader/callback", async (req, res) => {
-            try {
-                const code = String(req.query.code || "");
-                if (!code)
-                    return res.status(400).send("Missing ?code");
-                const tokenResp = await axios_1.default.get(TOKEN_URL, {
-                    params: {
-                        grant_type: "authorization_code",
-                        code,
-                        redirect_uri: CTRADER_REDIRECT_URI,
-                        client_id: CTRADER_CLIENT_ID,
-                        client_secret: CTRADER_CLIENT_SECRET,
-                    },
-                    timeout: 20000,
-                });
-                const token = tokenResp.data;
-                console.log("[cTrader][TOKEN]", token);
-                this.startOpenApiSession({
-                    accessToken: token.accessToken,
-                    preferredEnv: CTRADER_ENV,
-                })
-                    .then(() => console.log("[cTrader][DONE] WS flow finished"))
-                    .catch((e) => console.error("[cTrader][WS FLOW ERROR]", e?.message || e));
-                return res.json({
-                    ok: true,
-                    tokenType: token.tokenType,
-                    expiresIn: token.expiresIn,
-                    accessTokenPreview: String(token.accessToken || "").slice(0, 10) + "...",
-                    note: "Check server logs for WS auth + account list + trader info.",
-                });
-            }
-            catch (e) {
-                console.error("[cTrader][TOKEN ERROR]", e?.response?.data || e);
-                return res.status(500).send("Token exchange failed. Check logs.");
-            }
-        });
+        // this.app.get("/ctrader/auth", (_req, res) => {
+        //   if (
+        //     !CTRADER_CLIENT_ID ||
+        //     !CTRADER_CLIENT_SECRET ||
+        //     !CTRADER_REDIRECT_URI
+        //   ) {
+        //     return res.status(500).json({
+        //       ok: false,
+        //       message:
+        //         "Missing CTRADER_CLIENT_ID / CTRADER_CLIENT_SECRET / CTRADER_REDIRECT_URI in env",
+        //     });
+        //   }
+        //   const url = new URL(GRANT_URL);
+        //   url.searchParams.set("client_id", CTRADER_CLIENT_ID);
+        //   url.searchParams.set("redirect_uri", CTRADER_REDIRECT_URI);
+        //   url.searchParams.set("scope", "trading");
+        //   url.searchParams.set("product", "web");
+        //   return res.redirect(url.toString());
+        // });
+        // this.app.get("/ctrader/callback", async (req, res) => {
+        //   try {
+        //     const code = String(req.query.code || "");
+        //     if (!code) return res.status(400).send("Missing ?code");
+        //     const tokenResp = await axios.get(TOKEN_URL, {
+        //       params: {
+        //         grant_type: "authorization_code",
+        //         code,
+        //         redirect_uri: CTRADER_REDIRECT_URI,
+        //         client_id: CTRADER_CLIENT_ID,
+        //         client_secret: CTRADER_CLIENT_SECRET,
+        //       },
+        //       timeout: 20000,
+        //     });
+        //     const token: any = tokenResp.data;
+        //     console.log("[cTrader][TOKEN]", token,req.query);
+        //     this.startOpenApiSession({
+        //       accessToken: token.accessToken,
+        //       preferredEnv: CTRADER_ENV,
+        //     })
+        //       .then(() => console.log("[cTrader][DONE] WS flow finished"))
+        //       .catch((e) =>
+        //         console.error("[cTrader][WS FLOW ERROR]", e?.message || e)
+        //       );
+        //     return res.json({
+        //       ok: true,
+        //       tokenType: token.tokenType,
+        //       expiresIn: token.expiresIn,
+        //       accessTokenPreview:
+        //         String(token.accessToken || "").slice(0, 10) + "...",
+        //       note: "Check server logs for WS auth + account list + trader info.",
+        //     });
+        //   } catch (e: any) {
+        //     console.error("[cTrader][TOKEN ERROR]", e?.response?.data || e);
+        //     return res.status(500).send("Token exchange failed. Check logs.");
+        //   }
+        // });
     }
     async start() {
         try {

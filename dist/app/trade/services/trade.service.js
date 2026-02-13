@@ -87,5 +87,8 @@ class TradeService {
             await queryRunner.release();
         }
     }
+    async getAllTradesForUser(userId, start, count) {
+        return this.db.getAllTradeForUser({ userId, start, count });
+    }
 }
 exports.TradeService = TradeService;

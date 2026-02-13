@@ -15,15 +15,15 @@ import { Strategy } from "./Strategy";
 @Index(["planId", "strategyId"], { unique: true })
 export class PlanStrategy {
   @PrimaryGeneratedColumn({ type: "bigint" })
-  id!: string; // BIGINT -> keep as string
+  id!: number; // BIGINT
 
   @Index()
-  @Column({ name: "plan_id", type: "uuid" })
-  planId!: string;
+  @Column({ name: "plan_id", type: "bigint" })
+  planId!: number;
 
   @Index()
   @Column({ name: "strategy_id", type: "bigint" })
-  strategyId!: string; // BIGINT -> string
+  strategyId!: number;
 
   @ManyToOne(() => SubscriptionPlan, (p) => p.planStrategies, { onDelete: "CASCADE" })
   @JoinColumn({ name: "plan_id" })

@@ -15,8 +15,8 @@ export class PlanFeature {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ name: "plan_id", type: "uuid" })
-  planId!: string;
+  @Column({ name: "plan_id", type: "bigint" })
+  planId!: number;
 
   @ManyToOne(() => SubscriptionPlan, (p) => p.features, { onDelete: "CASCADE" })
   @JoinColumn({ name: "plan_id" })

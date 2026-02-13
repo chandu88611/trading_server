@@ -8,17 +8,23 @@ export class TradeRouter {
   private controller = new TradeController();
 
   constructor() {
-    // Create a new trade
-    this.routes.post(
-      "/",
+    this.routes.get(
+      "/all",
       requireAuth([Roles.USER, Roles.ADMIN]),
-      this.controller.create.bind(this.controller)
+      this.controller.getAllTrades.bind(this.controller)
     );
 
-    // TODO: Add endpoints for:
-    // GET /trades - list user trades with pagination and filters
-    // GET /trades/:id - get trade details
-    // GET /trades/history - get trade history with stats
+    this.routes.get(
+      "/",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.getSingleTrade.bind(this.controller)
+    );
+
+    this.routes.get(
+      "/history",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.getTradeHistory.bind(this.controller)
+    );
   }
 
   getRouter() {

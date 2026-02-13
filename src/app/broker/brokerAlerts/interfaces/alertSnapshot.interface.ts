@@ -1,5 +1,8 @@
+import { MarketType } from "../../../../types/trade-identify";
+
 export interface ICreateAlertSnapshot {
   userId: number;
+  market: MarketType;
   ticker: string;
   exchange: string;
   interval: string;
@@ -21,31 +24,12 @@ export enum TradeAction{
   HOLD = "HOLD"
 }
 
-// export interface ICreateAlertSnapshot {
-//   jobId: number;
-//   ticker: string;
-//   exchange?: string | null;
-//   interval?: string | null;
-//   barTime?: Date | null;
-//   alertTime?: Date | null;
-//   open?: number | null;
-//   close?: number | null;
-//   high?: number | null;
-//   low?: number | null;
-//   volume?: number | null;
-//   currency?: string | null;
-//   baseCurrency?: string | null;
-// }
-
-
-
 export type HistoryQuery = {
   page: number;
   limit: number;
   ticker?: string;
   exchange?: string;
   interval?: string;
-  jobId?: number;
   from?: string;        // ISO date
   to?: string;          // ISO date
   lastMinutes?: number; // alternative to from/to

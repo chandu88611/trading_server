@@ -16,8 +16,8 @@ export class PlanLimits {
   id!: number;
 
   @Index({ unique: true })
-  @Column({ name: "plan_id", type: "uuid" })
-  planId!: string;
+  @Column({ name: "plan_id", type: "bigint" })
+  planId!: number;
 
   @OneToOne(() => SubscriptionPlan, (p) => p.limits, { onDelete: "CASCADE" })
   @JoinColumn({ name: "plan_id" })

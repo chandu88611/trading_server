@@ -25,6 +25,7 @@ const PlanLimits_1 = require("../entity/PlanLimits");
 const PlanFeature_1 = require("../entity/PlanFeature");
 const PlanBundleItem_1 = require("../entity/PlanBundleItem");
 const PlanStrategy_1 = require("../entity/PlanStrategy");
+const CTradeSignals_1 = require("../entity/CTradeSignals");
 dotenv_1.default.config();
 const port = process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5449;
 exports.AppDataSource = new typeorm_1.DataSource({
@@ -65,6 +66,8 @@ exports.AppDataSource = new typeorm_1.DataSource({
         PlanFeature_1.PlanFeature,
         PlanBundleItem_1.PlanBundleItem,
         PlanStrategy_1.PlanStrategy,
+        CTradeSignals_1.CTradeSignal,
+        CTradeSignals_1.CTradeSignalStatus
     ],
     migrations: [],
     subscribers: [],

@@ -8,8 +8,6 @@ import { ApplicationRouter } from "./app/routes";
 import cors from "cors";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
-
-import axios from "axios";
 import WebSocket, { RawData } from "ws";
 import crypto from "crypto";
 import "./cron/ctrader-exec.worker";
@@ -300,7 +298,12 @@ export default class Server {
         await AppDataSource.initialize();
       }
 
-      await validateSchema(AppDataSource);
+      const enableSchemaValidation =
+        String(process.env.ENABLE_SCHEMA_VALIDATION || "").toLowerCase() ===
+        "true";
+      if (enableSchemaValidation) {
+        await validateSchema(AppDataSource);
+      }
       initKite().catch(console.error);
 
       this.app.listen(this.port, () => {

@@ -23,9 +23,23 @@ export type UpdateTradingAccountPayload = Partial<{
 export class TradingAccountService {
   private db = new TradingAccountDBService();
 
-  async listMyAccounts(userId: number) {
+  async getAllCopyTradingAccounts(userId: number, brokerIds: number[]) {
     try {
-      return await this.db.listByUser(userId);
+      let userTradingAccounts = await this.db.getActiveMasterAccountCopyAndFollowing(userId, brokerIds);
+        
+      return userTradingAccounts;
+    } catch (error) {
+      throw {
+        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
+        message: "failed_to_list_copy_trading_accounts",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async listMyAccounts(userId: number, planId: number) {
+    try {
+      return await this.db.listByUser(userId, planId);
     } catch (error) {
       throw {
         statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
@@ -65,13 +79,8 @@ export class TradingAccountService {
       await queryRunner.commitTransaction();
       return account;
     } catch (error) {
-      console.log(error)
       await queryRunner.rollbackTransaction();
-      throw {
-        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
-        message: "failed_to_create_trading_account",
-        error: error instanceof Error ? error.message : String(error),
-      };
+      throw error;
     } finally {
       await queryRunner.release();
     }
@@ -121,6 +130,22 @@ export class TradingAccountService {
         error: error instanceof Error ? error.message : String(error),
       };
     } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async makingCopyTradingRequestToMasterFromFollower({userId, masterAccountId, userTradingAccountId}: {userId: number, masterAccountId: number, userTradingAccountId: number}) {
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      await this.db.makingCopyTradingRequestToMasterFromFollower({userId, masterAccountId, userTradingAccountId}, queryRunner);
+      await queryRunner.commitTransaction();
+      return { success: true };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    }finally {
       await queryRunner.release();
     }
   }

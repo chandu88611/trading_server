@@ -20,26 +20,27 @@ export class BrokerJobDB {
     queryRunner: QueryRunner
   ): Promise<number> {
     try {
-      const cred = await this.credRepo.findOne({
-        where: { id: payload.credentialId },
-      });
-      if (!cred) throw new Error("credential_not_found");
+      // const cred = await this.credRepo.findOne({
+      //   where: { id: payload.credentialId },
+      // });
+      // if (!cred) throw new Error("credential_not_found");
 
-      const entity = queryRunner.manager.getRepository(BrokerJob).create({
-        credential: { id: payload.credentialId } as BrokerCredential,
-        type: payload.type,
-        payload: payload.payload ?? null,
-        status: "pending",
-        attempts: 0,
-      });
-      console.log("Creating broker job entity:", entity, payload);
+      // const entity = queryRunner.manager.getRepository(BrokerJob).create({
+      //   credential: { id: payload.credentialId } as BrokerCredential,
+      //   type: payload.type,
+      //   payload: payload.payload ?? null,
+      //   status: "pending",
+      //   attempts: 0,
+      // });
+      // console.log("Creating broker job entity:", entity, payload);
 
 
-      let data = await queryRunner.manager
-        .getRepository(BrokerJob)
-        .save(entity);
-        console.log("Saved broker job data:", data);
-      return data?.id;
+      // let data = await queryRunner.manager
+      //   .getRepository(BrokerJob)
+      //   .save(entity);
+      //   console.log("Saved broker job data:", data);
+      // return data?.id;
+      return 0
     } catch (error) {
       console.error("Error in getOrCreateBrokerJobId:", error);
       throw error;
@@ -52,15 +53,15 @@ export class BrokerJobDB {
     });
     if (!cred) throw new Error("credential_not_found");
 
-    const entity = this.repo.create({
-      credential: { id: payload.credentialId } as BrokerCredential,
-      type: payload.type,
-      payload: payload.payload ?? null,
-      status: "pending",
-      attempts: 0,
-    });
+    // const entity = this.repo.create({
+    //   credential: { id: payload.credentialId } as BrokerCredential,
+    //   type: payload.type,
+    //   payload: payload.payload ?? null,
+    //   status: "pending",
+    //   attempts: 0,
+    // });
 
-    return this.repo.save(entity);
+    return this.repo.save({});
   }
 
   async update(id: number, payload: IUpdateBrokerJob) {
@@ -84,10 +85,10 @@ export class BrokerJobDB {
   }
 
   async listByCredential(credentialId: number) {
-    return this.repo.find({
-      where: { credential: { id: credentialId } },
-      order: { createdAt: "DESC" },
-    });
+    // return this.repo.find({
+    //   where: { credentialId : { id: credentialId } },
+    //   order: { createdAt: "DESC" },
+    // });
   }
 
   async listPending(limit = 50) {

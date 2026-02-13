@@ -4,7 +4,7 @@ import { SubscriptionPlan } from "./SubscriptionPlan";
 @Entity({ name: "plan_types" })
 export class PlanType {
   @PrimaryGeneratedColumn({ type: "bigint" })
-  id!: string; // bigint -> string in JS runtime often
+  id!: string;
 
   @Column({ type: "text", unique: true })
   code!: string;

@@ -20,6 +20,10 @@ __decorate([
     __metadata("design:type", Number)
 ], BrokerCredential.prototype, "id", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "user_id", type: "int" }),
+    __metadata("design:type", Number)
+], BrokerCredential.prototype, "userId", void 0);
+__decorate([
     (0, typeorm_1.ManyToOne)(() => User_1.User, (u) => u.brokerCredentials, { onDelete: "CASCADE" }),
     (0, typeorm_1.JoinColumn)({ name: "user_id" }),
     __metadata("design:type", User_1.User)
@@ -52,6 +56,10 @@ __decorate([
     (0, typeorm_1.UpdateDateColumn)({ name: "updated_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], BrokerCredential.prototype, "updatedAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "broker_account_id", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], BrokerCredential.prototype, "brokerAccountId", void 0);
 exports.BrokerCredential = BrokerCredential = __decorate([
     (0, typeorm_1.Entity)({ name: "broker_credentials" }),
     (0, typeorm_1.Index)(["user", "keyName"], { unique: true })

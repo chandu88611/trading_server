@@ -7,10 +7,12 @@ exports.BrokerCredentialDB = void 0;
 const data_source_1 = __importDefault(require("../../../../db/data-source"));
 const entity_1 = require("../../../../entity");
 const constants_1 = require("../../../../types/constants");
+const ForexTraderUserDetails_1 = require("../../../../entity/ForexTraderUserDetails");
 class BrokerCredentialDB {
     constructor() {
         this.repo = data_source_1.default.getRepository(entity_1.BrokerCredential);
         this.userRepo = data_source_1.default.getRepository(entity_1.User);
+        this.forexRepo = data_source_1.default.getRepository(ForexTraderUserDetails_1.ForexTraderUserDetails);
     }
     async getCredentialIdByUserId(userId) {
         try {
@@ -23,16 +25,33 @@ class BrokerCredentialDB {
                     message: "trading_access_disabled",
                 };
             }
-            const credential = await this.repo.findOne({
+            const credential = await this.repo.find({
                 where: { user: { id: userId } },
             });
-            if (!credential) {
+            if (!credential || credential.length === 0) {
                 throw {
                     statusCode: constants_1.HttpStatusCode._BAD_REQUEST,
                     message: "credential_not_found",
                 };
             }
-            return credential.id;
+            return credential.map((item) => ({ id: item.id, keyName: item.keyName }));
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async getTypeOfBrokerByUserId(userId) {
+        try {
+            let data = await this.forexRepo.find({
+                where: { user: { id: userId } },
+            });
+            if (!data) {
+                throw {
+                    statusCode: constants_1.HttpStatusCode._BAD_REQUEST,
+                    message: "forex_trader_details_not_found",
+                };
+            }
+            return data.map((item) => item.forexType);
         }
         catch (error) {
             throw error;

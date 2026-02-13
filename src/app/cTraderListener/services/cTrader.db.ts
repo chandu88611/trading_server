@@ -1,76 +1,68 @@
+import { In, Repository } from "typeorm";
+import { TradeSignal } from "../../../entity/TradeSignals";
+import { TradeSignalStatus } from "../../../entity/TradeSignalsStatus";
 import AppDataSource from "../../../db/data-source";
-import { In, QueryRunner, Repository } from "typeorm";
-import { BrokerJob } from "../../../entity";
-import { AssetClassifier } from "../../../types/trade-identify";
-import { CTradeSignal, CTradeSignalStatus } from "../../../entity/CTradeSignals";
-import { ICreateTradeSignal } from "../../broker/brokerSignals/interfaces/tradeSignal.interface";
 import { ClaimedSignal } from "../../../db/enums";
 
 export class CTradeSignalDB {
-  private repo: Repository<CTradeSignal>;
-  private repoStatus: Repository<CTradeSignalStatus>;
-  private jobRepo: Repository<BrokerJob>;
-
+  private tradeSignalRepo: Repository<TradeSignal>;
+  private tradeSignalStatusRepo: Repository<TradeSignalStatus>;
   constructor() {
-    this.repo = AppDataSource.getRepository(CTradeSignal);
-    this.repoStatus = AppDataSource.getRepository(CTradeSignalStatus);
-    this.jobRepo = AppDataSource.getRepository(BrokerJob);
+    this.tradeSignalRepo = AppDataSource.getRepository(TradeSignal);
+    this.tradeSignalStatusRepo = AppDataSource.getRepository(TradeSignalStatus);
   }
 
-  async createTradeSignal(alertData: ICreateTradeSignal, queryRunner: QueryRunner) {
-    const entity = queryRunner.manager.getRepository(CTradeSignal).create({
-      jobId: alertData.jobId,
-      action: alertData.action,
-      symbol: alertData.symbol,
-      price: alertData.price,
-      exchange: alertData.exchange,
-      signalTime: alertData.signalTime,
-      assetType: AssetClassifier.detect({
-        symbol: alertData.symbol,
-        exchange: alertData.exchange,
-      }),
-    });
-
-    const saved = await queryRunner.manager.getRepository(CTradeSignal).save(entity);
-
-    const statusEntity = queryRunner.manager.getRepository(CTradeSignalStatus).create({
-      tradeSignalId: saved.id,
-      status: "pending",
-    });
-
-    await queryRunner.manager.getRepository(CTradeSignalStatus).save(statusEntity);
-
-    return saved;
+  async getPendingSignalDetailsForCTrader(): Promise<TradeSignal[]> {
+    try {
+      return await this.tradeSignalRepo
+        .createQueryBuilder("ts")
+        .leftJoinAndSelect("ts.status", "tss")
+        .leftJoinAndSelect("ts.tradingAccount", "ta")
+        .leftJoinAndSelect("ta.broker", "b")
+        .where("tss.status = :status", { status: "pending" })
+        .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
+        .orderBy("ts.createdAt", "ASC")
+        .getMany();
+    } catch (error) {
+      throw error;
+    }
   }
 
-  async create(payload: ICreateTradeSignal) {
-    const job = await this.jobRepo.findOne({ where: { id: payload.jobId } });
-    if (!job) throw new Error("job_not_found");
-
-    const entity = this.repo.create({
-      brokerJob: { id: payload.jobId } as BrokerJob,
-      action: payload.action,
-      symbol: payload.symbol,
-      price: payload.price,
-      exchange: payload.exchange,
-      signalTime: payload.signalTime,
-    });
-
-    return this.repo.save(entity);
+  async markJobInProgress(job: TradeSignal) {
+    await this.tradeSignalRepo.manager.query(
+      `UPDATE trade_signals_status SET status='in_progress' WHERE id=$1`,
+      [job.status.id]
+    );
   }
 
-  async listByJob(jobId: number) {
-    return this.repo.find({
-      where: { brokerJob: { id: jobId } },
-      order: { createdAt: "DESC" },
-    });
+  async markJobSuccess(job: TradeSignal) {
+    await this.tradeSignalRepo.manager.query(
+      `UPDATE trade_signals_status SET status='completed' WHERE id=$1`,
+      [job.status.id]
+    );
+  }
+
+  async markJobFailed(job: TradeSignal, error: string) {
+    await this.tradeSignalRepo.manager.query(
+      `
+      UPDATE trade_signals_status
+      SET status='failed',
+          last_error=$2,
+          attempts=attempts+1
+      WHERE id=$1
+      `,
+      [job.status.id, error]
+    );
   }
 
   async getAllTradeTo({ start, count }: { start: number; count: number }) {
-    const data: CTradeSignal[] = await this.repo
-      .createQueryBuilder("cts")
-      .innerJoinAndSelect(CTradeSignalStatus, "ctss", "cts.id = ctss.trade_signal_id")
-      .where("ctss.status = :status", { status: "pending" })
+    const data: TradeSignal[] = await this.tradeSignalRepo
+      .createQueryBuilder("ts")
+      .leftJoinAndSelect("ts.status", "tss")
+      .leftJoinAndSelect("ts.tradingAccount", "ta")
+      .leftJoinAndSelect("ta.broker", "b")
+      .where("tss.status = :status", { status: "pending" })
+      .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
       .skip(start)
       .take(count)
       .getMany();
@@ -84,9 +76,8 @@ export class CTradeSignalDB {
     await qr.startTransaction();
 
     try {
-      const statusRepo = qr.manager.getRepository(CTradeSignalStatus);
+      const statusRepo = qr.manager.getRepository(TradeSignalStatus);
 
-      // Select tradeSignalId rows from status table
       const qb: any = statusRepo
         .createQueryBuilder("s")
         .select("s.tradeSignalId", "id")
@@ -95,7 +86,6 @@ export class CTradeSignalDB {
         .limit(limit)
         .setLock("pessimistic_write");
 
-      // TypeORM versions differ: setOnLocked may not exist in typings
       if (typeof qb.setOnLocked === "function") qb.setOnLocked("skip_locked");
 
       const rows: Array<{ id: any }> = await qb.getRawMany();
@@ -106,22 +96,21 @@ export class CTradeSignalDB {
         return [];
       }
 
-      // Mark claimed -> processing
       await statusRepo
         .createQueryBuilder()
-        .update(CTradeSignalStatus)
+        .update(TradeSignalStatus)
         .set({ status: "processing", updatedAt: new Date() })
         .where("tradeSignalId IN (:...ids)", { ids })
         .execute();
 
       // Fetch signals
       const signals = await qr.manager
-      .getRepository(CTradeSignal)
-      .createQueryBuilder("cts")
-      .leftJoinAndSelect("cts.brokerJob", "bj")
-      .leftJoinAndSelect("bj.credential", "bc")
-      .where("cts.id IN (:...ids)", { ids })  
-      .andWhere("bc.keyName = :keyName", { keyName: "CT" })
+      .getRepository(TradeSignal)
+      .createQueryBuilder("ts")
+      .leftJoinAndSelect("ts.tradingAccount", "ta")
+      .leftJoinAndSelect("ta.broker", "b")
+      .where("ts.id IN (:...ids)", { ids })
+      .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
       .getMany();
 
       console.log("Claimed trade signals:", signals);
@@ -134,12 +123,12 @@ export class CTradeSignalDB {
 
       // keep order as ids
       const map = new Map(signals.map((s) => [s.id, s]));
-      const ordered = ids.map((id) => map.get(id)).filter(Boolean) as CTradeSignal[];
+      const ordered = ids.map((id) => map.get(id)).filter(Boolean) as TradeSignal[];
 const badIds: number[] = [];
     const structured: ClaimedSignal[] = [];
 
     for (const s of ordered) {
-      const userId = s?.brokerJob?.credential?.brokerAccountId;
+      const userId = s?.userId;
       if (!userId || !Number.isFinite(Number(userId))) {
         badIds.push(s.id);
         continue;
@@ -147,7 +136,7 @@ const badIds: number[] = [];
 
       structured.push({
         id: s.id,
-        jobId: Number(s.jobId),
+        jobId: Number(s.id),
         action: String(s.action),
         symbol: String(s.symbol),
         price: String(s.price), // numeric -> string
@@ -162,7 +151,7 @@ const badIds: number[] = [];
     if (badIds.length) {
       await statusRepo
         .createQueryBuilder()
-        .update(CTradeSignalStatus)
+        .update(TradeSignalStatus)
         .set({ status: "FAILED", updatedAt: new Date() })
         .where("tradeSignalId IN (:...ids)", { ids: badIds })
         .execute();
@@ -177,14 +166,44 @@ const badIds: number[] = [];
     }
   }
 
-  async updateTradeStatus(data: { id: number; status: string }[]) {
+  async updateTradeStatus(data: { id: number; status: string; error?: string }[]) {
+    const ids = data.map((d) => d.id).filter(Boolean);
+    if (!ids.length) return;
+
+    const jobs = await this.tradeSignalRepo.find({
+      where: { id: In(ids) },
+      relations: ["status"],
+    });
+
+    const jobMap = new Map(jobs.map((j) => [j.id, j]));
+
     await Promise.all(
       data.map(async (item) => {
-        await this.repoStatus
+        const job = jobMap.get(item.id);
+        if (!job?.status?.id) return;
+
+        const status = String(item.status ?? "").toLowerCase();
+
+        if (status === "in_progress" || status === "processing") {
+          await this.markJobInProgress(job);
+          return;
+        }
+
+        if (status === "completed" || status === "success" || status === "executed") {
+          await this.markJobSuccess(job);
+          return;
+        }
+
+        if (status === "failed" || status === "error") {
+          await this.markJobFailed(job, item.error ?? "execution_failed");
+          return;
+        }
+
+        await this.tradeSignalStatusRepo
           .createQueryBuilder()
-          .update(CTradeSignalStatus)
+          .update(TradeSignalStatus)
           .set({ status: item.status, updatedAt: new Date() })
-          .where("trade_signal_id = :id", { id: item.id })
+          .where("tradeSignalId = :id", { id: item.id })
           .execute();
       })
     );

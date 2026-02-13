@@ -17,6 +17,20 @@ class BrokerCredentialService {
             throw error;
         }
     }
+    async getTypeOfBrokerByUserId(userId) {
+        try {
+            const credential = await this.db.getTypeOfBrokerByUserId(userId);
+            if (credential && credential.length > 0) {
+                return credential;
+            }
+            else {
+                throw new Error("credential_not_found");
+            }
+        }
+        catch (error) {
+            throw error;
+        }
+    }
     async get(id) {
         return this.db.getById(id);
     }

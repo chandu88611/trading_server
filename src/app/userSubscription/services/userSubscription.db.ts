@@ -6,7 +6,7 @@ import { SubscriptionPlan } from "../../../entity/SubscriptionPlan";
 
 import { signWebhookToken } from "../../../middleware/auth";
 import { SubscriptionStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
-import { AssetType } from "../../../types/trade-identify";
+import { AssetType, MarketType } from "../../../types/trade-identify";
 
 type HttpErr = { statusCode: number; message: string };
 const badRequest = (message: string): HttpErr => ({ statusCode: 400, message });
@@ -20,25 +20,64 @@ export class UserSubscriptionDBService {
     this.planRepo = AppDataSource.getRepository(SubscriptionPlan);
   }
 
-  getActiveSubscription(userId: number) {
-    return this.subRepo.findOne({
+  async getActiveSubscription(userId: number) {
+    let data =  await this.subRepo.find({
       where: {
         userId: userId as any,
         statusV2: SubscriptionStatus.ACTIVE as any,
       } as any,
       relations: {
         plan: true,
-      } as any,
+      } as any
     });
+    console.log("getActiveSubscription", { userId, data });
+    return data
+
+  }
+
+    async getActiveSubscriptionCurrent(userId: number,start: number, count: number,  searchParams?: any) {
+      // with market
+      try {
+        let data =  this.subRepo.createQueryBuilder("us")
+        .leftJoinAndSelect("us.plan", "plan")
+        .leftJoinAndSelect("plan.market", "market")
+        .where("us.user_id = :userId", { userId })
+        .andWhere("us.status_v2 = :status", { status: SubscriptionStatus.ACTIVE })
+        .andWhere("plan.is_active = true")
+        // Optional: filter by market if searchParams.market is provided
+        if(searchParams){
+          if(searchParams.market){
+            data = data.andWhere("market.code = :marketCode", { marketCode: searchParams.market });
+          }
+        }
+        let itemData = await data.skip(start).take(count).getMany();
+        console.log("getActiveSubscriptionCurrent", { userId, itemData });
+        return itemData
+      } catch (error) {
+        throw error
+      }
+    // return this.subRepo.find({
+    //   where: {
+    //     userId: userId as any,
+    //     statusV2: SubscriptionStatus.ACTIVE as any,
+
+    //   } as any,
+    //   relations: {
+    //     plan: true,
+    //   } as any,
+    //   order: { createdAt: "DESC" } as any,
+    //   skip: start,
+    //   take: count,
+    // });
   }
 
   /**
    * New design:
-   * - planId is UUID string
+   * - planId is BIGINT (number)
    * - need pricing relation (interval is there)
    * - ensure isActive = true
    */
-  getPlan(planId: string) {
+  getPlan(planId: number) {
     return this.planRepo.findOne({
       where: { id: planId, isActive: true } as any,
       relations: {
@@ -49,13 +88,13 @@ export class UserSubscriptionDBService {
     });
   }
 
-  async createSubscription(userId: number, planId: string, durationDays: number) {
+  async createSubscription(userId: number, planId: number, durationDays: number) {
     const now = new Date();
     const end = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
 
     const data: DeepPartial<UserSubscription> = {
       userId: userId as any,
-      planId: planId as any, // UUID
+      planId: planId as any, // BIGINT (number)
       startDate: now,
       endDate: end,
 
@@ -142,7 +181,7 @@ export class UserSubscriptionDBService {
    * old code: plan.category = assetType
    * new code: use plan.market.code (FOREX/CRYPTO/INDIAN) to validate
    */
-  async subscriberPlanValidation(userId: number, assetType: AssetType) {
+  async subscriberPlanValidation(userId: number, marketType: MarketType) {
     const qb = this.subRepo
       .createQueryBuilder("us")
       .innerJoinAndSelect("us.plan", "plan")
@@ -153,11 +192,10 @@ export class UserSubscriptionDBService {
       .andWhere(
         new Brackets((q) => {
           q.where("plan.market_id IS NULL")        
-           .orWhere("market.code = :mc", { mc: assetType }); 
+           .orWhere("market.code = :mc", { mc: marketType }); 
         })
       );
-    // Map AssetType -> market.code if needed
-    // If your AssetType already matches: 'FOREX' | 'CRYPTO' | 'INDIAN', this works directly.
-    return qb.getOne();
+    const data = await qb.getOne();
+    return data || null;
   }
 }

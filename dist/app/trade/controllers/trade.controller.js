@@ -52,6 +52,12 @@ class TradeController {
         }
         res.status(201).json(result);
     }
+    async getAllTrades(req, res) {
+        const userId = Number(req.auth.userId);
+        const { start = 0, count = 10 } = req.query ?? {};
+        const result = await this.service.getAllTradesForUser(userId, Number(start), Number(count));
+        res.status(200).json(result);
+    }
 }
 exports.TradeController = TradeController;
 __decorate([
@@ -60,3 +66,9 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], TradeController.prototype, "create", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], TradeController.prototype, "getAllTrades", null);

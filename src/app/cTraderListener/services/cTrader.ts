@@ -103,10 +103,6 @@ export class CTraderService {
     return h.ok;
   }
 
-  async createTradeSignal(alertData: ICreateTradeSignal, queryRunner: QueryRunner) {
-    return this.db.createTradeSignal(alertData, queryRunner);
-  }
-
   async makeCall({ start, count }: { start: number; count: number }) {
     return this.db.getAllTradeTo({ start, count });
   }
@@ -253,7 +249,6 @@ async exectuteTradeSignalApiCall(data: any): Promise<ExecResult> {
     const batchSize = opts?.batchSize ?? Number(process.env.CTRADER_EXEC_BATCH_SIZE ?? 25);
 
     const healthy = await this.isHealthy(5000);
-    // console.log("[CTRADER] Health check:", healthy);
     if (!healthy) return;
 
     const trades = await this.db.claimPendingTrades(batchSize);
@@ -301,7 +296,6 @@ async exectuteTradeSignalApiCall(data: any): Promise<ExecResult> {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      // IMPORTANT: do not log `oauthCode`
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -310,9 +304,7 @@ async exectuteTradeSignalApiCall(data: any): Promise<ExecResult> {
           "x-user-id": uid,
         },
         body: JSON.stringify({
-          // gateway can read from ctx header; keep body minimal
           code: oauthCode,
-          // optional (harmless) if gateway also allows body.userId
           userId: uid,
         }),
         signal: controller.signal,
@@ -371,8 +363,6 @@ async completeOAuthAndVerifyByCTraderAccountId(
       return { ok: false, status: 400, error: "state_required" };
     }
 
-    // ✅ Find row using JSONB account_meta
-    // Postgres: account_meta ->> 'ctraderAccountId' = :ctraderAccountId
     const acc = await repo
       .createQueryBuilder("a")
       .setLock("pessimistic_write")

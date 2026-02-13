@@ -7,25 +7,17 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from "typeorm";
-import { BrokerJob } from "./BrokerJob";
+import { User } from "./User";
 
 @Entity({ name: "alert_snapshots" })
 export class AlertSnapshot {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  
-  @Column({ name: "job_id", type: "int" })
-  jobId!: number;
-
-  @ManyToOne(() => BrokerJob, (bj) => bj.alertSnapshots, { onDelete: "CASCADE" })
-  @JoinColumn({ name: "job_id" })
-  brokerJob!: BrokerJob;
-
   @Column({ type: "varchar", length: 20 })
   ticker!: string;
 
-  @Column({ type: "varchar", length: "50", nullable: true })
+  @Column({ type: "varchar", length: 50, nullable: true })
   exchange!: string;
 
   @Column({ type: "varchar", length: 10, nullable: true })
@@ -63,4 +55,11 @@ export class AlertSnapshot {
 
   @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
+
+  @Column({ name: "user_id", type: "bigint" })
+  userId!: number;
+
+  @ManyToOne(() => User, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "user_id" })
+  user?: User;
 }

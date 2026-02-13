@@ -17,11 +17,11 @@ export class PlanBundleItem {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ name: "bundle_plan_id", type: "uuid" })
-  bundlePlanId!: string;
+  @Column({ name: "bundle_plan_id", type: "bigint" })
+  bundlePlanId!: number;
 
-  @Column({ name: "included_plan_id", type: "uuid" })
-  includedPlanId!: string;
+  @Column({ name: "included_plan_id", type: "bigint" })
+  includedPlanId!: number;
 
   @ManyToOne(() => SubscriptionPlan, (p) => p.bundleItems, { onDelete: "CASCADE" })
   @JoinColumn({ name: "bundle_plan_id" })
@@ -36,4 +36,5 @@ export class PlanBundleItem {
 
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
+  
 }

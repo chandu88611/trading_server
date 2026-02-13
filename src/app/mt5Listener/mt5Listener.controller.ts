@@ -10,15 +10,8 @@ export class Mt5ListenerController {
     try {
       const brokerAccountId = String(req.query.userId || "");
       if (!brokerAccountId) return res.json({});
-      console.log("USER ID ::: ",brokerAccountId)
       const signal =
-        await this.service.getSignalForEA(brokerAccountId);
-        
-      if(signal && signal.ackId){
-        signal.ackId = Number(signal.ackId || 0);
-        signal.qty = 0.01;      
-      }
-        console.log("Signal to be sent ::: ",signal);
+        await this.service.getSignalForEA(brokerAccountId);        
       return res.json(signal);
     } catch (err) {
       console.error("listenSignal error:", err);
