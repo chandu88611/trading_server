@@ -19,17 +19,17 @@ let PlanStrategy = class PlanStrategy {
 exports.PlanStrategy = PlanStrategy;
 __decorate([
     (0, typeorm_1.PrimaryGeneratedColumn)({ type: "bigint" }),
-    __metadata("design:type", String)
+    __metadata("design:type", Number)
 ], PlanStrategy.prototype, "id", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
-    (0, typeorm_1.Column)({ name: "plan_id", type: "uuid" }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: "plan_id", type: "bigint" }),
+    __metadata("design:type", Number)
 ], PlanStrategy.prototype, "planId", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
     (0, typeorm_1.Column)({ name: "strategy_id", type: "bigint" }),
-    __metadata("design:type", String)
+    __metadata("design:type", Number)
 ], PlanStrategy.prototype, "strategyId", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => SubscriptionPlan_1.SubscriptionPlan, (p) => p.planStrategies, { onDelete: "CASCADE" }),

@@ -45,7 +45,27 @@ export class UserSubscriptionController {
 
     res.status(200).json({
       message: "Fetched current subscription",
-      data: subscription,
+       subscription,
+    });
+  }
+
+  @ControllerError()
+  async followerUserTradingAccount(req: Request, res: Response) {
+    const userId = (req as any).auth.userId as number;
+    const start = Number(req.query.start || 0);
+    const count = Number(req.query.count || 20);
+    const searchParams = req.query.searchParams;
+
+    const followers = await this.service.getFollowerUserTradingAccount(
+      userId,
+      start,
+      count,
+      searchParams
+    );
+
+    res.status(200).json({
+      message: "Fetched follower user trading account",
+      followers,
     });
   }
 
@@ -71,6 +91,22 @@ export class UserSubscriptionController {
     res.status(200).json({
       message: "Fetched all subscriptions",
       data,
+    });
+  }
+
+  @ControllerError()
+  async updateWebhookStatus(req: Request, res: Response) {
+    const { subscriptionId, isWebhookEnabled } = req.body;
+
+    if (subscriptionId === undefined || isWebhookEnabled === undefined) {
+      res.status(400).json({ message: "subscriptionId and isWebhookEnabled are required" });
+      return;
+    }
+
+    await this.service.updateSubscriptionWebhookStatus(subscriptionId, isWebhookEnabled);
+
+    res.status(200).json({
+      message: "Subscription webhook status updated successfully",
     });
   }
 }

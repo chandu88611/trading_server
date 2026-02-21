@@ -20,8 +20,8 @@ __decorate([
     __metadata("design:type", Number)
 ], PlanFeature.prototype, "id", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: "plan_id", type: "uuid" }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: "plan_id", type: "bigint" }),
+    __metadata("design:type", Number)
 ], PlanFeature.prototype, "planId", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => SubscriptionPlan_1.SubscriptionPlan, (p) => p.features, { onDelete: "CASCADE" }),

@@ -1,17 +1,4 @@
 "use strict";
-// import {
-//   Entity,
-//   PrimaryGeneratedColumn,
-//   Column,
-//   ManyToOne,
-//   CreateDateColumn,
-//   UpdateDateColumn,
-//   JoinColumn,
-//   Index,
-// } from "typeorm";
-// import { User } from "./User";
-// import { SubscriptionPlan } from "./SubscriptionPlan";
-// import { SubscriptionStatus } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -23,55 +10,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserSubscription = void 0;
-// @Entity({ name: "user_subscriptions" })
-// export class UserSubscription {
-//   @PrimaryGeneratedColumn()
-//   id!: number;
-//   @Index()
-//   @Column({ name: "user_id", type: "bigint" })
-//   userId!: number;
-//   @Index()
-//   @Column({ name: "plan_id", type: "uuid" })
-//   planId!: string;
-//   @ManyToOne(() => User, { onDelete: "CASCADE" })
-//   @JoinColumn({ name: "user_id" })
-//   user!: User;
-//   @ManyToOne(() => SubscriptionPlan, { onDelete: "RESTRICT" })
-//   @JoinColumn({ name: "plan_id" })
-//   plan!: SubscriptionPlan;
-//   // legacy status column exists in DB too, but your app wants v2
-//   @Column({
-//     name: "status_v2",
-//     type: "enum",
-//     enum: SubscriptionStatus,
-//     enumName: "subscription_status",
-//     nullable: true,
-//   })
-//   statusV2!: SubscriptionStatus | null;
-//   @Column({ name: "webhook_token", type: "text", nullable: true })
-//   webhookToken!: string | null;
-//   @Column({ name: "execution_enabled", type: "boolean", default: true })
-//   executionEnabled!: boolean;
-//   @Column({ name: "liquidate_only_until", type: "timestamptz", nullable: true })
-//   liquidateOnlyUntil!: Date | null;
-//   @Column({ name: "start_date", type: "timestamptz", default: () => "now()" })
-//   startDate!: Date;
-//   @Column({ name: "end_date", type: "timestamptz", nullable: true })
-//   endDate!: Date | null;
-//   @Column({ type: "jsonb", nullable: true })
-//   metadata!: Record<string, any> | null;
-//   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
-//   createdAt!: Date;
-//   @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
-//   updatedAt!: Date;
-// }
-// src/entity/UserSubscription.ts
 const typeorm_1 = require("typeorm");
 const User_1 = require("./User");
 const SubscriptionPlan_1 = require("./SubscriptionPlan");
 const subscriberPlan_enum_1 = require("../app/subscriptionPlan/enums/subscriberPlan.enum");
 const UserTradingAccount_1 = require("./UserTradingAccount");
-const CopyTradingFollow_1 = require("./CopyTradingFollow");
 let UserSubscription = class UserSubscription {
 };
 exports.UserSubscription = UserSubscription;
@@ -86,8 +29,8 @@ __decorate([
 ], UserSubscription.prototype, "userId", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
-    (0, typeorm_1.Column)({ name: "plan_id", type: "uuid" }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: "plan_id", type: "bigint" }),
+    __metadata("design:type", Number)
 ], UserSubscription.prototype, "planId", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => User_1.User, { onDelete: "CASCADE" }),
@@ -110,6 +53,10 @@ __decorate([
     __metadata("design:type", Object)
 ], UserSubscription.prototype, "statusV2", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "auto_renew", type: "boolean", default: true }),
+    __metadata("design:type", Boolean)
+], UserSubscription.prototype, "autoRenew", void 0);
+__decorate([
     (0, typeorm_1.Column)({ name: "webhook_token", type: "text", nullable: true }),
     __metadata("design:type", Object)
 ], UserSubscription.prototype, "webhookToken", void 0);
@@ -126,9 +73,17 @@ __decorate([
     __metadata("design:type", Date)
 ], UserSubscription.prototype, "startDate", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "is_webhook_enabled", type: "boolean", default: false }),
+    __metadata("design:type", Boolean)
+], UserSubscription.prototype, "isWebhookEnabled", void 0);
+__decorate([
     (0, typeorm_1.Column)({ name: "end_date", type: "timestamptz", nullable: true }),
     __metadata("design:type", Object)
 ], UserSubscription.prototype, "endDate", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "cancel_at", type: "timestamptz", nullable: true }),
+    __metadata("design:type", Object)
+], UserSubscription.prototype, "cancelAt", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: "jsonb", nullable: true }),
     __metadata("design:type", Object)
@@ -137,10 +92,6 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => UserTradingAccount_1.UserTradingAccount, (a) => a.subscription),
     __metadata("design:type", Array)
 ], UserSubscription.prototype, "tradingAccounts", void 0);
-__decorate([
-    (0, typeorm_1.OneToMany)(() => CopyTradingFollow_1.CopyTradingFollow, (f) => f.subscription),
-    __metadata("design:type", Array)
-], UserSubscription.prototype, "copyFollows", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)({ name: "created_at", type: "timestamptz" }),
     __metadata("design:type", Date)

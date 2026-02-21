@@ -22,18 +22,18 @@ class SubscriptionPlanController {
         res.status(201).json({ message: "Subscription plan created", data: plan });
     }
     async getPlan(req, res) {
-        const id = String(req.params.planId); // UUID
+        const id = Number(req.params.planId); // BIGINT
         const plan = await this.service.getPlan(id);
         res.status(200).json({ message: "Fetched", data: plan });
     }
     async updatePlan(req, res) {
-        const id = String(req.params.planId); // UUID
+        const id = Number(req.params.planId); // BIGINT
         const payload = req.body;
         await this.service.updatePlan(id, payload);
         res.status(200).json({ message: "Updated successfully" });
     }
     async deletePlan(req, res) {
-        const id = String(req.params.planId); // UUID
+        const id = Number(req.params.planId); // BIGINT
         await this.service.deactivatePlan(id);
         res.status(200).json({ message: "Plan deactivated" });
     }

@@ -9,18 +9,7 @@ export class TradingAccountRouter {
 
   constructor() {
     // List all accounts for current user
-    this.routes.get(
-      "/",
-      requireAuth([Roles.USER, Roles.ADMIN]),
-      this.controller.listMyAccounts.bind(this.controller)
-    );
-
-    // Get specific account by ID
-    this.routes.get(
-      "/:id",
-      requireAuth([Roles.USER, Roles.ADMIN]),
-      this.controller.getMyAccountById.bind(this.controller)
-    );
+    
 
     // Create new account
     this.routes.post(
@@ -60,6 +49,20 @@ export class TradingAccountRouter {
       requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.handleCopyTradingRequest.bind(this.controller)
     )
+
+    this.routes.get(
+      "/",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.listMyAccounts.bind(this.controller)
+    );
+
+    // Get specific account by ID
+    this.routes.get(
+      "/:id",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.getMyAccountById.bind(this.controller)
+    );
+
   }
 
   getRouter() {

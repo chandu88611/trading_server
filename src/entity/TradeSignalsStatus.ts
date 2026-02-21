@@ -25,6 +25,9 @@ export class TradeSignalStatus {
   @Column({ type: "varchar", length: 20 })
   status!: string;
 
+  @Column({ name: "attempts", type: "int", default: 0 })
+  attempts!: number;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 

@@ -3,6 +3,7 @@ import AppDataSource from "../../../db/data-source";
 import {
    AlertSnapshot,
    TradeSignal,
+   TradeSignalStatus,
 } from "../../../entity";
 import { CopyTradeSideEnum } from "../../../db/enums";
 import { AssetType } from "../../../types/trade-identify";
@@ -74,7 +75,7 @@ export class TradeDBService {
         .where("ta.userId = :userId", { userId })
         .andWhere("ta.id = :accountId", { accountId })
         .andWhere(new Brackets(qb => {
-            qb.where("tss.status = :status", { status: "closed" })
+            qb.where("tss.status IN (:...statuses)", { statuses: ["closed","pending_close"] })
         }))
         .orderBy("ts.createdAt", "DESC")
         .skip(start)
@@ -89,5 +90,44 @@ export class TradeDBService {
     } catch (error) {
       throw error;
     }
+  }
+
+  async closeTrade(signalIds: number[], userId: number, isCloseAll: boolean, queryRunner: QueryRunner) {
+  try {
+    if(signalIds.length === 0 && !isCloseAll){
+      throw {
+        statusCode: HttpStatusCode._BAD_REQUEST,
+        message: "missing_signal_ids",
+      };
+    }
+    console.log("Closing trades with signalIds:", signalIds, "for userId:", userId, "isCloseAll:", isCloseAll);
+    const signalQb = queryRunner.manager.getRepository(TradeSignal).createQueryBuilder("ts")
+      .leftJoin("ts.tradingAccount", "ta")
+      .leftJoin("ts.status", "tss")
+      .where("ta.userId = :userId", { userId })
+      .andWhere("tss.status = :status", { status: "completed" })
+      if (!isCloseAll) {
+        signalQb.andWhere("ts.id IN (:...signalIds)", { signalIds })
+      }
+    const signalsToClose = await signalQb.getMany();
+
+    if (signalsToClose.length === 0) {
+      throw {
+        statusCode: HttpStatusCode._NOT_FOUND,
+        message: "no_trades_found_to_close",
+      };
+    }
+    let updateSignalStatus = await queryRunner.manager.getRepository(TradeSignalStatus).createQueryBuilder()
+      .update(TradeSignalStatus)
+      .set({ status: "pending_close" })
+      .where("tradeSignalId IN (:...ids)", { ids: signalsToClose.map(s => s.id) })
+      .execute();
+
+    return {
+      message: `${updateSignalStatus.affected} trade(s) closed successfully`,
+    };
+  } catch (error) {
+    throw error
+  }
   }
 }

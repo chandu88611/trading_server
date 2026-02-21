@@ -18,6 +18,12 @@ setInterval(async () => {
     catch (e) {
         console.error("[CTRADER] executePendingBatch error", e);
     }
+    try {
+        await ctrader.executeClosePendingBatch({ batchSize });
+    }
+    catch (e) {
+        console.error("[CTRADER] executeClosePendingBatch error", e);
+    }
     finally {
         inFlight = false;
     }

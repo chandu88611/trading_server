@@ -25,13 +25,13 @@ let SubscriptionPlan = class SubscriptionPlan {
 };
 exports.SubscriptionPlan = SubscriptionPlan;
 __decorate([
-    (0, typeorm_1.PrimaryGeneratedColumn)("uuid"),
-    __metadata("design:type", String)
+    (0, typeorm_1.PrimaryGeneratedColumn)(),
+    __metadata("design:type", Number)
 ], SubscriptionPlan.prototype, "id", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
     (0, typeorm_1.Column)({ name: "plan_type_id", type: "bigint" }),
-    __metadata("design:type", String)
+    __metadata("design:type", Number)
 ], SubscriptionPlan.prototype, "planTypeId", void 0);
 __decorate([
     (0, typeorm_1.Index)(),

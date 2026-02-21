@@ -15,6 +15,10 @@ const typeorm_1 = require("typeorm");
 const User_1 = require("./User");
 const UserSubscription_1 = require("./UserSubscription");
 const subscriberPlan_enum_1 = require("../app/subscriptionPlan/enums/subscriberPlan.enum");
+const Brokers_1 = require("./Brokers");
+const TradeSignals_1 = require("./TradeSignals");
+const CopyTradingMaster_1 = require("./CopyTradingMaster");
+const CopyTradingFollow_1 = require("./CopyTradingFollow");
 let UserTradingAccount = class UserTradingAccount {
 };
 exports.UserTradingAccount = UserTradingAccount;
@@ -47,19 +51,18 @@ __decorate([
     __metadata("design:type", Boolean)
 ], UserTradingAccount.prototype, "isMaster", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: "broker", type: "text" }),
-    __metadata("design:type", String)
-], UserTradingAccount.prototype, "broker", void 0);
+    (0, typeorm_1.Column)({ name: "broker_id", type: "bigint" }),
+    __metadata("design:type", Number)
+], UserTradingAccount.prototype, "brokerId", void 0);
 __decorate([
-    (0, typeorm_1.Column)({
-        name: "execution_flow",
-        type: "enum",
-        enum: subscriberPlan_enum_1.ExecutionFlow,
-        // If your DB enum type name is `execution_flow`, you can add:
-        // enumName: "execution_flow",
-    }),
+    (0, typeorm_1.Column)({ name: "account_id", type: "text" }),
     __metadata("design:type", String)
-], UserTradingAccount.prototype, "executionFlow", void 0);
+], UserTradingAccount.prototype, "accountId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => Brokers_1.Broker, { onDelete: "RESTRICT" }),
+    (0, typeorm_1.JoinColumn)({ name: "broker_id" }),
+    __metadata("design:type", Brokers_1.Broker)
+], UserTradingAccount.prototype, "broker", void 0);
 __decorate([
     (0, typeorm_1.Column)({ name: "account_label", type: "text", nullable: true }),
     __metadata("design:type", Object)
@@ -77,8 +80,6 @@ __decorate([
         name: "status",
         type: "enum",
         enum: subscriberPlan_enum_1.TradingAccountStatus,
-        // If your DB enum type name is `trading_account_status`, you can add:
-        // enumName: "trading_account_status",
         default: subscriberPlan_enum_1.TradingAccountStatus.PENDING,
     }),
     __metadata("design:type", String)
@@ -95,6 +96,26 @@ __decorate([
     (0, typeorm_1.UpdateDateColumn)({ name: "updated_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], UserTradingAccount.prototype, "updatedAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "access_token", type: "text" }),
+    __metadata("design:type", String)
+], UserTradingAccount.prototype, "accessToken", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "refresh_token", type: "text" }),
+    __metadata("design:type", String)
+], UserTradingAccount.prototype, "refreshToken", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => TradeSignals_1.TradeSignal, (tradeSignal) => tradeSignal.tradingAccount),
+    __metadata("design:type", Array)
+], UserTradingAccount.prototype, "tradeSignals", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => CopyTradingMaster_1.CopyTradingMaster, (ctm) => ctm.userTradingAccount),
+    __metadata("design:type", Array)
+], UserTradingAccount.prototype, "copyTradingMasterAccounts", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => CopyTradingFollow_1.CopyTradingFollowers, (ctm) => ctm.followerTradingAccount),
+    __metadata("design:type", Array)
+], UserTradingAccount.prototype, "copyTradingFollowingAccounts", void 0);
 exports.UserTradingAccount = UserTradingAccount = __decorate([
     (0, typeorm_1.Entity)({ name: "user_trading_accounts" })
 ], UserTradingAccount);

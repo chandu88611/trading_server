@@ -7,49 +7,54 @@ exports.AlertSnapshotService = void 0;
 const data_source_1 = __importDefault(require("../../../../db/data-source"));
 const constants_1 = require("../../../../types/constants");
 const trade_identify_1 = require("../../../../types/trade-identify");
-const copyTrading_service_1 = require("../../../copyTrading/services/copyTrading.service");
-const cTrader_1 = require("../../../cTraderListener/services/cTrader");
+// import { CopyTradingService } from "../../../copyTrading/services/copyTrading.service";
+// import { CTraderService } from "../../../cTraderListener/services/cTrader";
 const userSubscription_1 = require("../../../userSubscription/services/userSubscription");
-const brokerCredential_service_1 = require("../../brokerCredentials/services/brokerCredential.service");
-const brokerJob_service_1 = require("../../brokerJobs/services/brokerJob.service");
 const tradeSignal_service_1 = require("../../brokerSignals/services/tradeSignal.service");
-const alertSnapshot_db_1 = require("../db/alertSnapshot.db");
+const alertSnapshot_db_1 = require("./alertSnapshot.db");
+const tradingAccount_service_1 = require("../../../tradingAccount/services/tradingAccount.service");
 class AlertSnapshotService {
     constructor() {
         this.alertSnapshotDB = new alertSnapshot_db_1.AlertSnapshotDB();
-        this.brokerJobService = new brokerJob_service_1.BrokerJobService();
-        this.brokerCredentialService = new brokerCredential_service_1.BrokerCredentialService();
         this.tradeSignalService = new tradeSignal_service_1.TradeSignalService();
         this.userSubscriptionService = new userSubscription_1.UserSubscriptionService();
-        this.copyTradingService = new copyTrading_service_1.CopyTradingService();
-        this.cTraderService = new cTrader_1.CTraderService();
+        // this.copyTradingService = new CopyTradingService();
+        // this.cTraderService = new CTraderService();
+        this.tradingAccountService = new tradingAccount_service_1.TradingAccountService();
     }
     async create(payload) {
         const queryRunner = data_source_1.default.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
         try {
-            let credentialdata = await this.alertSnapshotDB.getAllTradeTypeForUser(payload.userId);
-            let assetType = trade_identify_1.AssetClassifier.detect({
-                symbol: payload.ticker,
-                exchange: payload.exchange,
-            });
-            if (assetType === trade_identify_1.AssetType.UNKNOWN) {
-                throw {
-                    status: constants_1.HttpStatusCode._BAD_REQUEST,
-                    message: "unsupported_asset_type",
-                };
-            }
-            let isValidPlan = await this.userSubscriptionService.subscriberPlanValidation(payload.userId, assetType);
+            let assetType = await this.isValidAssetType(payload);
+            let isValidPlan = await this.userSubscriptionService.subscriberPlanValidation(payload.userId, payload.market);
             if (!isValidPlan) {
                 throw {
                     status: constants_1.HttpStatusCode._BAD_REQUEST,
                     message: "invalid_subscription_plan",
                 };
             }
-            if (credentialdata.length > 0) {
-                await this.attendAlertForForexTrader(credentialdata, payload, queryRunner);
+            let snapshot = await this.alertSnapshotDB.create(payload, queryRunner);
+            let brokerData = await this.alertSnapshotDB.getBrokerId(payload.market);
+            let userTradingAccounts = await this.tradingAccountService.getAllCopyTradingAccounts(payload.userId, brokerData);
+            let tradeSignalPayload = [];
+            if (userTradingAccounts.length > 0) {
+                console.log("Creating trade signals for user", userTradingAccounts);
+                tradeSignalPayload = userTradingAccounts.map(account => ({
+                    userId: account.userId,
+                    tradingAccountId: account.id,
+                    alertSnapshotsId: snapshot.id,
+                    action: payload.action,
+                    symbol: payload.ticker,
+                    price: payload.close,
+                    exchange: payload.exchange,
+                    signalTime: payload.alertTime,
+                    volume: payload.volume,
+                    assetType: assetType,
+                }));
             }
+            await this.tradeSignalService.createTradeSignal(tradeSignalPayload, queryRunner);
             await queryRunner.commitTransaction();
         }
         catch (error) {
@@ -60,66 +65,28 @@ class AlertSnapshotService {
             await queryRunner.release();
         }
     }
-    async attendAlertForForexTrader(credentialdata, payload, queryRunner) {
+    async isValidAssetType(payload) {
         try {
-            await this.alertSnapshotDB.createBrokerJobTradeAndStatus(credentialdata, payload, queryRunner);
+            let assetType = trade_identify_1.AssetClassifier.detect({
+                symbol: payload.ticker,
+                exchange: payload.exchange,
+            });
+            if (assetType === trade_identify_1.AssetType.UNKNOWN) {
+                throw {
+                    status: constants_1.HttpStatusCode._BAD_REQUEST,
+                    message: "unsupported_asset_type",
+                };
+            }
+            return assetType;
         }
         catch (error) {
             throw error;
         }
     }
-    async getAlertHistory(userId, q) {
-        if (!userId) {
-            throw { status: constants_1.HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-        }
-        const page = Math.max(1, Number(q.page || 1));
-        const limit = Math.min(200, Math.max(1, Number(q.limit || 20)));
-        // resolve time window
-        const { from, to } = this.resolveTimeWindow(q.from, q.to, q.lastMinutes);
-        return this.alertSnapshotDB.getHistory({
-            userId,
-            page,
-            limit,
-            ticker: q.ticker,
-            exchange: q.exchange,
-            interval: q.interval,
-            jobId: q.jobId,
-            from,
-            to,
-        });
-    }
-    async getAlertTimeline(userId, q) {
-        if (!userId) {
-            throw { status: constants_1.HttpStatusCode._UNAUTHORISED, message: "unauthorized" };
-        }
-        const { from, to } = this.resolveTimeWindow(q.from, q.to, q.lastMinutes);
-        return this.alertSnapshotDB.getTimeline({
-            userId,
-            bucket: q.bucket || "15m",
-            ticker: q.ticker,
-            exchange: q.exchange,
-            interval: q.interval,
-            jobId: q.jobId,
-            from,
-            to,
-        });
-    }
-    resolveTimeWindow(from, to, lastMinutes) {
-        if (lastMinutes && lastMinutes > 0) {
-            const end = new Date();
-            const start = new Date(Date.now() - lastMinutes * 60 * 1000);
-            return { from: start, to: end };
-        }
-        const end = to ? new Date(to) : new Date();
-        const start = from ? new Date(from) : new Date(Date.now() - 60 * 60 * 1000); // default last 1 hour
-        return { from: start, to: end };
-    }
-    async listByJob(jobId) {
-        return this.alertSnapshotDB.listByJob(jobId);
-    }
-    async getOpenJobs(userId, q) {
+    async getAlertHistory(userId, query) {
         try {
-            return this.alertSnapshotDB.getOpenJobs(userId, q);
+            const data = await this.alertSnapshotDB.getAlertHistory(userId, query);
+            return data;
         }
         catch (error) {
             throw error;

@@ -134,12 +134,44 @@ export class TradingAccountService {
     }
   }
 
-  async makingCopyTradingRequestToMasterFromFollower({userId, masterAccountId, userTradingAccountId}: {userId: number, masterAccountId: number, userTradingAccountId: number}) {
+  async makingCopyTradingRequestToMasterFromFollower({userId, userTradingAccountId, userEmail}: {userId: number, userTradingAccountId: number, userEmail: string}) {
     const queryRunner = AppDataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
-      await this.db.makingCopyTradingRequestToMasterFromFollower({userId, masterAccountId, userTradingAccountId}, queryRunner);
+      const result = await this.db.makingCopyTradingRequestToMasterFromFollower({userId, userTradingAccountId, userEmail}, queryRunner);
+      await queryRunner.commitTransaction();
+      
+      // Send email invitation to user/follower
+      try {
+        const { sendCopyTradingRequestEmail } = await import("../../../types/email.service");
+        await sendCopyTradingRequestEmail({
+          masterEmail: result.masterUser.email,
+          masterName: result.masterUser.name || 'Master Trader',
+          followerName: result.followerUser.name || 'User',
+          followerEmail: result.followerUser.email,
+          requestId: result.entry.id,
+        });
+      } catch (emailError) {
+        // Log email error but don't fail the request
+        console.error('Failed to send copy trading invitation email:', emailError);
+      }
+      
+      return { success: true };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    }finally {
+      await queryRunner.release();
+    }
+  }
+
+  async approveCopyTradingRequestFromFollower(requestId: number, approve: boolean) {
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      await this.db.approveCopyTradingRequest(requestId, approve, queryRunner);
       await queryRunner.commitTransaction();
       return { success: true };
     } catch (error) {
@@ -147,6 +179,18 @@ export class TradingAccountService {
       throw error;
     }finally {
       await queryRunner.release();
+    }
+  }
+
+  async getCopyTradingRequests(userId: number) {
+    try {
+      return await this.db.getCopyTradingRequestsForMaster(userId);
+    } catch (error) {
+      throw {
+        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
+        message: "failed_to_fetch_copy_trading_requests",
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 }

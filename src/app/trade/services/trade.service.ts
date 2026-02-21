@@ -30,4 +30,20 @@ export class TradeService {
   async getTradeHistory({userId, accountId, start, count, searchParams, status}: {userId: number, accountId: string, start: number, count: number, searchParams?: string, status?: string}) {
     return this.db.getHistoryForTrade({ userId, accountId, start, count, searchParams, status });
   }
+
+  async closeTrade(signalIds: number[], userId: number, isCloseAll: boolean) {
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const result = await this.db.closeTrade(signalIds, userId, isCloseAll, queryRunner);
+      await queryRunner.commitTransaction();
+      return result;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+       throw error
+    } finally {
+      await queryRunner.release();
+    }
+  }
 }

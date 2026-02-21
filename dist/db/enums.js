@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UserTradeType = exports.CopyTradeSideEnum = exports.AddressTypeEnum = exports.SubscriptionStatusEnum = exports.PlanBillingCycleEnum = exports.UserRoleEnum = void 0;
+exports.TradingCategory = exports.marketDataProviderEnum = exports.UserTradeType = exports.CopyTradeSideEnum = exports.AddressTypeEnum = exports.SubscriptionStatusEnum = exports.PlanBillingCycleEnum = exports.UserRoleEnum = void 0;
 var UserRoleEnum;
 (function (UserRoleEnum) {
     UserRoleEnum["USER"] = "USER";
@@ -36,5 +36,20 @@ var CopyTradeSideEnum;
 var UserTradeType;
 (function (UserTradeType) {
     UserTradeType["MT5"] = "MT5";
-    UserTradeType["CTRADER"] = "CT";
+    UserTradeType["CTRADER"] = "CTRADER";
 })(UserTradeType || (exports.UserTradeType = UserTradeType = {}));
+var marketDataProviderEnum;
+(function (marketDataProviderEnum) {
+    marketDataProviderEnum["FOREX"] = "FOREX";
+    marketDataProviderEnum["CRYPTO"] = "CRYPTO";
+    marketDataProviderEnum["INDIAN"] = "INDIAN";
+})(marketDataProviderEnum || (exports.marketDataProviderEnum = marketDataProviderEnum = {}));
+var TradingCategory;
+(function (TradingCategory) {
+    TradingCategory["FOREX"] = "FOREX";
+    TradingCategory["CRYPTO"] = "CRYPTO";
+    TradingCategory["INDEX"] = "INDEX";
+    TradingCategory["COMMODITY"] = "COMMODITY";
+    TradingCategory["STOCK"] = "STOCK";
+    TradingCategory["FUTURES"] = "FUTURES";
+})(TradingCategory || (exports.TradingCategory = TradingCategory = {}));

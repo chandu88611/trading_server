@@ -19,6 +19,8 @@ import {
 } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
 import { Broker } from "./Brokers";
 import { TradeSignal } from "./TradeSignals";
+import { CopyTradingMaster } from "./CopyTradingMaster";
+import { CopyTradingFollowers } from "./CopyTradingFollow";
 
 @Entity({ name: "user_trading_accounts" })
 export class UserTradingAccount {
@@ -54,13 +56,6 @@ export class UserTradingAccount {
   @JoinColumn({ name: "broker_id" })
   broker!: Broker;
 
-  @Column({
-    name: "execution_flow",
-    type: "enum",
-    enum: ExecutionFlow,
-  })
-  executionFlow!: ExecutionFlow;
-
   @Column({ name: "account_label", type: "text", nullable: true })
   accountLabel!: string | null;
 
@@ -95,4 +90,10 @@ export class UserTradingAccount {
 
   @OneToMany(() => TradeSignal, (tradeSignal) => tradeSignal.tradingAccount)
   tradeSignals!: TradeSignal[];
+
+  @OneToMany(() => CopyTradingMaster, (ctm) => ctm.userTradingAccount)
+  copyTradingMasterAccounts!: CopyTradingMaster[];
+
+  @OneToMany(() => CopyTradingFollowers, (ctm) => ctm.followerTradingAccount)
+  copyTradingFollowingAccounts!: CopyTradingFollowers[];
 }

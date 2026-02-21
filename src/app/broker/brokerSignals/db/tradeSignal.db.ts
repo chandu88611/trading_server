@@ -19,7 +19,8 @@ export class TradeSignalDB {
           symbol: data.symbol,
           price: data.price,
           exchange: data.exchange,
-          signalTime: data.signalTime,
+          signalTime: new Date(),
+          volume: data.volume,
           assetType: AssetClassifier.detect({
             symbol: data.symbol,
             exchange: data.exchange,

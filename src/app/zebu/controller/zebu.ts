@@ -28,13 +28,16 @@ export class ZebuController {
 		const tradingAccountId = this.requireTradingAccountId(req);
 
 		const accessToken = String((req.body as any)?.accessToken ?? "").trim();
-		const baseUrl = String((req.body as any)?.baseUrl ?? "").trim() || undefined;
+		
 		const apiKey = String((req.body as any)?.apiKey ?? "").trim() || undefined;
 
 		if (!accessToken) {
 			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "accessToken_required" });
 		}
-
+		let baseUrl = process.env.ZEBU_BASE_URL ?? "";
+		if(baseUrl === "") {
+			throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "zebu_base_url_not_configured" };
+		}
 		const result = await this.service.saveAuthToken({
 			userId,
 			tradingAccountId,

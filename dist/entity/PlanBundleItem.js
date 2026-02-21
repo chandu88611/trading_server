@@ -20,12 +20,12 @@ __decorate([
     __metadata("design:type", Number)
 ], PlanBundleItem.prototype, "id", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: "bundle_plan_id", type: "uuid" }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: "bundle_plan_id", type: "bigint" }),
+    __metadata("design:type", Number)
 ], PlanBundleItem.prototype, "bundlePlanId", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: "included_plan_id", type: "uuid" }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: "included_plan_id", type: "bigint" }),
+    __metadata("design:type", Number)
 ], PlanBundleItem.prototype, "includedPlanId", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => SubscriptionPlan_1.SubscriptionPlan, (p) => p.bundleItems, { onDelete: "CASCADE" }),

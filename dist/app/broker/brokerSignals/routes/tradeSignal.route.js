@@ -1,10 +1,9 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const tradeSignal_controller_1 = require("../controller/tradeSignal.controller");
-const auth_1 = require("../../../../middleware/auth");
-const ctrl = new tradeSignal_controller_1.TradeSignalController();
-const router = (0, express_1.Router)();
-router.post("/", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.create.bind(ctrl));
-router.get("/job/:jobId", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.listByJob.bind(ctrl));
-exports.default = router;
+// import { Router } from "express";
+// import { TradeSignalController } from "../controller/tradeSignal.controller";
+// import { requireAuth, Roles } from "../../../../middleware/auth";
+// const ctrl = new TradeSignalController();
+// const router = Router();
+// router.post("/", requireAuth([Roles.USER, Roles.ADMIN]), ctrl.create.bind(ctrl));
+// router.get("/job/:jobId", requireAuth([Roles.USER, Roles.ADMIN]), ctrl.listByJob.bind(ctrl));
+// export default router;

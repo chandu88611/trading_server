@@ -6,30 +6,30 @@ import { SubscriptionPlan } from "../../../entity/SubscriptionPlan";
 
 import { signWebhookToken } from "../../../middleware/auth";
 import { SubscriptionStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
-import { AssetType, MarketType } from "../../../types/trade-identify";
-
-type HttpErr = { statusCode: number; message: string };
-const badRequest = (message: string): HttpErr => ({ statusCode: 400, message });
+import { MarketType } from "../../../types/trade-identify";
+import { CopyTradingFollowers } from "../../../entity/CopyTradingFollow";
 
 export class UserSubscriptionDBService {
   private subRepo: Repository<UserSubscription>;
   private planRepo: Repository<SubscriptionPlan>;
+  private copyTradingFollowersRepo: Repository<CopyTradingFollowers>;
 
   constructor() {
     this.subRepo = AppDataSource.getRepository(UserSubscription);
     this.planRepo = AppDataSource.getRepository(SubscriptionPlan);
+    this.copyTradingFollowersRepo = AppDataSource.getRepository(CopyTradingFollowers);
   }
 
-  async getActiveSubscription(userId: number) {
-    let data =  await this.subRepo.find({
-      where: {
-        userId: userId as any,
-        statusV2: SubscriptionStatus.ACTIVE as any,
-      } as any,
-      relations: {
-        plan: true,
-      } as any
-    });
+  async getActiveSubscription(userId: number, plan?: SubscriptionPlan) {
+    let query =   this.subRepo.createQueryBuilder("us")
+    .leftJoinAndSelect("us.plan", "plan")
+    .where("us.user_id = :userId", { userId })
+    .andWhere("us.status_v2 = :status", { status: SubscriptionStatus.ACTIVE })
+    .andWhere("plan.is_active = true")
+    if(plan){
+      query.andWhere("plan.id = :planId", { planId: plan.id })
+    }
+    const data = await query.getMany();
     console.log("getActiveSubscription", { userId, data });
     return data
 
@@ -38,21 +38,63 @@ export class UserSubscriptionDBService {
     async getActiveSubscriptionCurrent(userId: number,start: number, count: number,  searchParams?: any) {
       // with market
       try {
+        /*
+          @OneToOne(() => PlanPricing, (p) => p.plan)
+          pricing?: PlanPricing;
+        
+          @OneToOne(() => PlanLimits, (l) => l.plan)
+          limits?: PlanLimits;
+        
+          @OneToMany(() => PlanFeature, (f) => f.plan)
+          features?: PlanFeature[];
+        
+          @OneToMany(() => PlanBundleItem, (bi) => bi.bundlePlan)
+          bundleItems?: PlanBundleItem[];
+        
+          @OneToMany(() => PlanBundleItem, (bi) => bi.includedPlan)
+          includedInBundles?: PlanBundleItem[];
+        
+          @OneToMany(() => PlanStrategy, (ps) => ps.plan)
+          planStrategies?: PlanStrategy[];
+        
+          // existing relations
+          @OneToMany(() => UserSubscription, (sub) => sub.plan)
+          userSubscriptions?: UserSubscription[];
+        
+          @OneToMany(() => SubscriptionInvoice, (inv) => inv.plan)
+          invoices?: SubscriptionInvoice[];
+        */
         let data =  this.subRepo.createQueryBuilder("us")
         .leftJoinAndSelect("us.plan", "plan")
+        .leftJoinAndSelect("plan.pricing", "pricing")
         .leftJoinAndSelect("plan.market", "market")
+        .leftJoinAndSelect("plan.planType", "planType")
+        .leftJoinAndSelect("plan.features", "features")
+        .leftJoinAndSelect("plan.limits", "limits")
+        .leftJoinAndSelect("plan.planStrategies", "planStrategies")
+        .leftJoinAndSelect("plan.includedInBundles", "includedInBundles")
+        .leftJoinAndSelect("includedInBundles.bundlePlan", "bundlePlan")
+        .leftJoinAndSelect("bundlePlan.pricing", "bundlePlanPricing")
+        .leftJoinAndSelect("bundlePlan.market", "bundlePlanMarket")
+        .leftJoinAndSelect("bundlePlan.planType", "bundlePlanType")
         .where("us.user_id = :userId", { userId })
         .andWhere("us.status_v2 = :status", { status: SubscriptionStatus.ACTIVE })
         .andWhere("plan.is_active = true")
-        // Optional: filter by market if searchParams.market is provided
         if(searchParams){
           if(searchParams.market){
             data = data.andWhere("market.code = :marketCode", { marketCode: searchParams.market });
           }
         }
         let itemData = await data.skip(start).take(count).getMany();
+        let followerFormat = await this.copyTradingFollowersRepo.find({
+          where: {
+            followerUserId: userId,
+          },
+          relations: ["master", "master.user"],
+        });
+
         console.log("getActiveSubscriptionCurrent", { userId, itemData });
-        return itemData
+        return { data: itemData, followers: followerFormat };
       } catch (error) {
         throw error
       }
@@ -69,6 +111,40 @@ export class UserSubscriptionDBService {
     //   skip: start,
     //   take: count,
     // });
+  }
+
+  async getFollowerUserTradingAccount(userId: number, start: number, count: number, searchParams?: any) {
+    try {
+      console.log("getFollowerUserTradingAccount", { userId, start, count, searchParams });
+      let query = this.copyTradingFollowersRepo
+        .createQueryBuilder("followers")
+        .leftJoinAndSelect("followers.master", "master")
+        .leftJoinAndSelect("master.user", "masterUser")
+        .leftJoinAndSelect("master.broker", "masterBroker")
+        .leftJoinAndSelect("master.subscription", "masterSubscription")
+        .leftJoinAndSelect("masterSubscription.plan", "masterSubscriptionPlan")
+        .leftJoinAndSelect("followers.followerTradingAccount", "followerTradingAccount")
+        .leftJoinAndSelect("followerTradingAccount.broker", "followerTradingAccountBroker")
+        .leftJoinAndSelect("followerTradingAccount.subscription", "followerTradingAccountSubscription")
+        .leftJoinAndSelect("followerTradingAccountSubscription.plan", "followerTradingAccountSubscriptionPlan")
+        .where("followers.followerUserId = :userId", { userId });
+
+      if (searchParams && typeof searchParams === "object" && "status" in searchParams) {
+        query = query.andWhere("followers.status = :status", {
+          status: searchParams.status,
+        });
+      }
+
+      const followers = await query
+        .orderBy("followers.createdAt", "DESC")
+        .skip(start)
+        .take(count)
+        .getMany();
+
+      return followers;
+    } catch (error) {
+      throw error;
+    }
   }
 
   /**
@@ -197,5 +273,18 @@ export class UserSubscriptionDBService {
       );
     const data = await qb.getOne();
     return data || null;
+  }
+
+  async updateSubscriptionWebhookStatus(subscriptionId: number, isEnabled: boolean) {
+    try {
+      await this.subRepo.update(
+        { id: subscriptionId } as any,
+        {
+          isWebhookEnabled: isEnabled,
+        } as any
+      );
+    } catch (error) {
+      throw error
+    }
   }
 }

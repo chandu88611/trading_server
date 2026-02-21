@@ -11,7 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AlertSnapshot = void 0;
 const typeorm_1 = require("typeorm");
-const BrokerJob_1 = require("./BrokerJob");
+const User_1 = require("./User");
 let AlertSnapshot = class AlertSnapshot {
 };
 exports.AlertSnapshot = AlertSnapshot;
@@ -20,20 +20,11 @@ __decorate([
     __metadata("design:type", Number)
 ], AlertSnapshot.prototype, "id", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: "job_id", type: "int" }),
-    __metadata("design:type", Number)
-], AlertSnapshot.prototype, "jobId", void 0);
-__decorate([
-    (0, typeorm_1.ManyToOne)(() => BrokerJob_1.BrokerJob, (bj) => bj.alertSnapshots, { onDelete: "CASCADE" }),
-    (0, typeorm_1.JoinColumn)({ name: "job_id" }),
-    __metadata("design:type", BrokerJob_1.BrokerJob)
-], AlertSnapshot.prototype, "brokerJob", void 0);
-__decorate([
     (0, typeorm_1.Column)({ type: "varchar", length: 20 }),
     __metadata("design:type", String)
 ], AlertSnapshot.prototype, "ticker", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: "varchar", length: "50", nullable: true }),
+    (0, typeorm_1.Column)({ type: "varchar", length: 50, nullable: true }),
     __metadata("design:type", String)
 ], AlertSnapshot.prototype, "exchange", void 0);
 __decorate([
@@ -84,6 +75,15 @@ __decorate([
     (0, typeorm_1.UpdateDateColumn)({ name: "updated_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], AlertSnapshot.prototype, "updatedAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "user_id", type: "bigint" }),
+    __metadata("design:type", Number)
+], AlertSnapshot.prototype, "userId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => User_1.User, { onDelete: "CASCADE" }),
+    (0, typeorm_1.JoinColumn)({ name: "user_id" }),
+    __metadata("design:type", User_1.User)
+], AlertSnapshot.prototype, "user", void 0);
 exports.AlertSnapshot = AlertSnapshot = __decorate([
     (0, typeorm_1.Entity)({ name: "alert_snapshots" })
 ], AlertSnapshot);

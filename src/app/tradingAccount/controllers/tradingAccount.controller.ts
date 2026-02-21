@@ -11,8 +11,8 @@ export class TradingAccountController {
   @ControllerError()
   async listMyAccounts(req: AuthRequest, res: Response) {
     const userId = Number(req.auth!.userId);
-    const planId = req.query.planId as string | undefined;
-    if(planId === undefined || planId === null || planId.trim() === "") {
+    const planId = Number(req.query.planId);
+    if(planId === undefined || planId === null || isNaN(planId)) {
       res.status(400).json({ message: "missing_plan_id" });
       return;
     }
@@ -38,7 +38,7 @@ export class TradingAccountController {
   async createMyAccount(req: AuthRequest, res: Response) {
     const userId = Number(req.auth!.userId);
     const payload: CreateTradingAccountPayload = req.body ?? {};
-
+    console.log("Received request to create trading account with payload", { userId, payload }); 
     if (!payload.accountLabel) {
       res.status(400).json({ message: "missing_required_fields" });
       return;
@@ -77,35 +77,36 @@ export class TradingAccountController {
     res.status(204).send();
   }
 
-  @ControllerError()
-  async allowCopyTrading(req: AuthRequest, res: Response) {
-    const userId = Number(req.auth!.userId);
-    const payload: { allow: boolean, userTradingAccountId: number, masterAccountId: number } = req.body ?? {};
+  // @ControllerError()
+  // async allowCopyTrading(req: AuthRequest, res: Response) {
+  //   const userId = Number(req.auth!.userId);
+  //   const payload: { allow: boolean, userTradingAccountId: number, masterAccountId: number } = req.body ?? {};
 
-    if (payload.allow === undefined) {
-      res.status(400).json({ message: "missing_allow_field" });
-      return;
-    }
+  //   if (payload.allow === undefined) {
+  //     res.status(400).json({ message: "missing_allow_field" });
+  //     return;
+  //   }
 
-    // await this.service.setCopyTradingPermission(userId, payload.allow);
-    res.json({ message: `you allowed copy trading ${payload.allow} for userTradingAccountId ${payload.userTradingAccountId} and masterAccountId ${payload.masterAccountId}` });
-  }
+  //   // await this.service.setCopyTradingPermission(userId, payload.allow);
+  //   res.json({ message: `you allowed copy trading ${payload.allow} for userTradingAccountId ${payload.userTradingAccountId} and masterAccountId ${payload.masterAccountId}` });
+  // }
 
-  @ControllerError()
-  async handleCopyTradingRequest(req: AuthRequest, res: Response) {
-    const userId = Number(req.auth!.userId);
-    const payload: { userTradingAccountId: number, userEmail: string, masterAccountId: number } = req.body ?? {};
+  // @ControllerError()
+  // async handleCopyTradingRequest(req: AuthRequest, res: Response) {
+  //   const userId = Number(req.auth!.userId);
+  //   const payload: { userTradingAccountId: number, userEmail: string, masterAccountId: number } = req.body ?? {};
 
-      if (!payload.userTradingAccountId || !payload.userEmail || !payload.masterAccountId) {
-        res.status(400).json({ message: "missing_required_fields" });
-        return;
-      }
-    // await this.service.handleCopyTradingRequest(userId, payload.requestId, payload.accept);
-    res.json({ message: `you handled copy trading request for userTradingAccountId ${payload.userTradingAccountId} and masterAccountId ${payload.masterAccountId}` });
-  }
+  //     if (!payload.userTradingAccountId || !payload.userEmail || !payload.masterAccountId) {
+  //       res.status(400).json({ message: "missing_required_fields" });
+  //       return;
+  //     }
+  //   // await this.service.handleCopyTradingRequest(userId, payload.requestId, payload.accept);
+  //   res.json({ message: `you handled copy trading request for userTradingAccountId ${payload.userTradingAccountId} and masterAccountId ${payload.masterAccountId}` });
+  // }
 
   @ControllerError()
   async getCopyTradingRequests(req: AuthRequest, res: Response) {
+    console.log("Received request to get copy trading requests", { userId: req.auth!.userId });
     const userId = Number(req.auth!.userId);
     let {count, start, searchParams} = req.query ?? {};
     if(count === undefined) {
@@ -114,42 +115,42 @@ export class TradingAccountController {
     if(start === undefined) {
       start = '0';
     }
-    // sample searchParams: { masterAccountId?: number, userTradingAccountId?: number }
-    // sample data
-    const requests = [{
-      id: 1,
-      type: marketDataProviderEnum.FOREX,
-      masterAccountId: 123,
-      userTradingAccountId: 456,
-      requestedAt: new Date(),
-    },
-    {
-      id: 2,
-      type: marketDataProviderEnum.CRYPTO,
-      masterAccountId: 789,
-      userTradingAccountId: 456,
-      requestedAt: new Date(),
-    }];
 
 
 
-    // const requests = await this.service.getCopyTradingRequests(userId);
+    const requests = await this.service.getCopyTradingRequests(userId);
     res.json({ requests });
 
   }
 
   @ControllerError()
-  async makingCopyTradingRequestToMasterFromFollower(req: AuthRequest, res: Response) {
+  async handleCopyTradingRequest(req: AuthRequest, res: Response) {
     const userId = Number(req.auth!.userId);
-    const payload: { masterAccountId: number, userTradingAccountId: number } = req.body ?? {};
+    const payload: {
+       userTradingAccountId: number, 
+       userEmail: string } = req.body ?? {};
 
-    if (!payload.masterAccountId || !payload.userTradingAccountId) {
+    if ( !payload.userTradingAccountId || !payload.userEmail) {
       res.status(400).json({ message: "missing_required_fields" });
       return;
     }
 
-    await this.service.makingCopyTradingRequestToMasterFromFollower({userId, masterAccountId: payload.masterAccountId, userTradingAccountId: payload.userTradingAccountId});
-    res.json({ message: `you made copy trading request to master ${payload.masterAccountId} from userTradingAccountId ${payload.userTradingAccountId}` });
+    await this.service.makingCopyTradingRequestToMasterFromFollower({userId, userTradingAccountId: payload.userTradingAccountId, userEmail: payload.userEmail});
+    res.json({ message: `you made copy trading request from userTradingAccountId ${payload.userTradingAccountId}` });
+  }
+
+  @ControllerError()
+  async allowCopyTrading(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const payload: { requestId: number, approve: boolean } = req.body ?? {};
+
+    if (!payload.requestId || payload.approve === undefined) {
+      res.status(400).json({ message: "missing_required_fields" });
+      return;
+    }
+
+    await this.service.approveCopyTradingRequestFromFollower(payload.requestId, payload.approve);
+    res.json({ message: `you ${payload.approve ? 'approved' : 'rejected'} copy trading request ${payload.requestId}` });
   }
 
 }

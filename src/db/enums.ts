@@ -33,6 +33,11 @@ export enum CopyTradeSideEnum {
 export type ClaimedSignal = {
   id: number;
   jobId: number;
+  tradingAccountId: number;
+  accountId: number;
+  env?: "demo" | "live";
+  accessToken: string;
+  refreshToken?: string;
   action: string;
   symbol: string;
   price: string | number;

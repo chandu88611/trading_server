@@ -4,62 +4,79 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CTradeSignalDB = void 0;
+const typeorm_1 = require("typeorm");
+const TradeSignals_1 = require("../../../entity/TradeSignals");
+const TradeSignalsStatus_1 = require("../../../entity/TradeSignalsStatus");
+const UserTradingAccount_1 = require("../../../entity/UserTradingAccount");
 const data_source_1 = __importDefault(require("../../../db/data-source"));
-const entity_1 = require("../../../entity");
-const trade_identify_1 = require("../../../types/trade-identify");
-const CTradeSignals_1 = require("../../../entity/CTradeSignals");
 class CTradeSignalDB {
     constructor() {
-        this.repo = data_source_1.default.getRepository(CTradeSignals_1.CTradeSignal);
-        this.repoStatus = data_source_1.default.getRepository(CTradeSignals_1.CTradeSignalStatus);
-        this.jobRepo = data_source_1.default.getRepository(entity_1.BrokerJob);
+        this.tradeSignalRepo = data_source_1.default.getRepository(TradeSignals_1.TradeSignal);
+        this.tradeSignalStatusRepo = data_source_1.default.getRepository(TradeSignalsStatus_1.TradeSignalStatus);
+        this.tradingAccountRepo = data_source_1.default.getRepository(UserTradingAccount_1.UserTradingAccount);
     }
-    async createTradeSignal(alertData, queryRunner) {
-        const entity = queryRunner.manager.getRepository(CTradeSignals_1.CTradeSignal).create({
-            jobId: alertData.jobId,
-            action: alertData.action,
-            symbol: alertData.symbol,
-            price: alertData.price,
-            exchange: alertData.exchange,
-            signalTime: alertData.signalTime,
-            assetType: trade_identify_1.AssetClassifier.detect({
-                symbol: alertData.symbol,
-                exchange: alertData.exchange,
-            }),
-        });
-        const saved = await queryRunner.manager.getRepository(CTradeSignals_1.CTradeSignal).save(entity);
-        const statusEntity = queryRunner.manager.getRepository(CTradeSignals_1.CTradeSignalStatus).create({
-            tradeSignalId: saved.id,
-            status: "pending",
-        });
-        await queryRunner.manager.getRepository(CTradeSignals_1.CTradeSignalStatus).save(statusEntity);
-        return saved;
+    async getPendingSignalDetailsForCTrader() {
+        try {
+            return await this.tradeSignalRepo
+                .createQueryBuilder("ts")
+                .leftJoinAndSelect("ts.status", "tss")
+                .leftJoinAndSelect("ts.tradingAccount", "ta")
+                .leftJoinAndSelect("ta.broker", "b")
+                .where("tss.status = :status", { status: "pending" })
+                .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
+                .orderBy("ts.createdAt", "ASC")
+                .getMany();
+        }
+        catch (error) {
+            throw error;
+        }
     }
-    async create(payload) {
-        const job = await this.jobRepo.findOne({ where: { id: payload.jobId } });
-        if (!job)
-            throw new Error("job_not_found");
-        const entity = this.repo.create({
-            brokerJob: { id: payload.jobId },
-            action: payload.action,
-            symbol: payload.symbol,
-            price: payload.price,
-            exchange: payload.exchange,
-            signalTime: payload.signalTime,
-        });
-        return this.repo.save(entity);
+    async markJobInProgress(job) {
+        await this.tradeSignalRepo.manager.query(`UPDATE trade_signals_status SET status='in_progress' WHERE id=$1`, [job.status.id]);
     }
-    async listByJob(jobId) {
-        return this.repo.find({
-            where: { brokerJob: { id: jobId } },
-            order: { createdAt: "DESC" },
-        });
+    async markJobSuccess(job) {
+        await this.tradeSignalRepo.manager.query(`UPDATE trade_signals_status SET status='completed' WHERE id=$1`, [job.status.id]);
+    }
+    async markJobCloseSuccess(job) {
+        await this.tradeSignalRepo.manager.query(`UPDATE trade_signals_status SET status='closed' WHERE id=$1`, [job.status.id]);
+    }
+    async markJobFailed(job, _error) {
+        await this.tradeSignalRepo.manager.query(`
+      UPDATE trade_signals_status
+      SET status='failed',
+          attempts=attempts+1
+      WHERE id=$1
+      `, [job.status.id]);
+    }
+    async updateTradingAccountTokens(tradingAccountId, accessToken, refreshToken) {
+        const access = String(accessToken ?? "").trim();
+        if (!Number.isFinite(tradingAccountId) || tradingAccountId <= 0 || !access)
+            return;
+        const patch = {
+            accessToken: access,
+        };
+        const refresh = String(refreshToken ?? "").trim();
+        if (refresh)
+            patch.refreshToken = refresh;
+        await this.tradingAccountRepo.update({ id: tradingAccountId }, patch);
+    }
+    async updateTradingAccountAccountId(tradingAccountId, accountId) {
+        if (!Number.isFinite(tradingAccountId) ||
+            tradingAccountId <= 0 ||
+            !Number.isFinite(accountId) ||
+            accountId <= 0) {
+            return;
+        }
+        await this.tradingAccountRepo.update({ id: tradingAccountId }, { accountId: String(accountId) });
     }
     async getAllTradeTo({ start, count }) {
-        const data = await this.repo
-            .createQueryBuilder("cts")
-            .innerJoinAndSelect(CTradeSignals_1.CTradeSignalStatus, "ctss", "cts.id = ctss.trade_signal_id")
-            .where("ctss.status = :status", { status: "pending" })
+        const data = await this.tradeSignalRepo
+            .createQueryBuilder("ts")
+            .leftJoinAndSelect("ts.status", "tss")
+            .leftJoinAndSelect("ts.tradingAccount", "ta")
+            .leftJoinAndSelect("ta.broker", "b")
+            .where("tss.status = :status", { status: "pending" })
+            .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
             .skip(start)
             .take(count)
             .getMany();
@@ -70,16 +87,18 @@ class CTradeSignalDB {
         await qr.connect();
         await qr.startTransaction();
         try {
-            const statusRepo = qr.manager.getRepository(CTradeSignals_1.CTradeSignalStatus);
-            // Select tradeSignalId rows from status table
+            const statusRepo = qr.manager.getRepository(TradeSignalsStatus_1.TradeSignalStatus);
             const qb = statusRepo
                 .createQueryBuilder("s")
+                .leftJoinAndSelect("s.tradeSignal", "ts")
+                .leftJoinAndSelect("ts.tradingAccount", "ta")
+                .leftJoinAndSelect("ta.broker", "b")
                 .select("s.tradeSignalId", "id")
                 .where("s.status = :status", { status: "pending" })
+                .andWhere("b.code = :code", { code: "CT" })
                 .orderBy("s.tradeSignalId", "ASC")
                 .limit(limit)
                 .setLock("pessimistic_write");
-            // TypeORM versions differ: setOnLocked may not exist in typings
             if (typeof qb.setOnLocked === "function")
                 qb.setOnLocked("skip_locked");
             const rows = await qb.getRawMany();
@@ -88,40 +107,51 @@ class CTradeSignalDB {
                 await qr.commitTransaction();
                 return [];
             }
-            // Mark claimed -> processing
             await statusRepo
                 .createQueryBuilder()
-                .update(CTradeSignals_1.CTradeSignalStatus)
-                .set({ status: "processing", updatedAt: new Date() })
+                .update(TradeSignalsStatus_1.TradeSignalStatus)
+                .set({ status: "in_progress", updatedAt: new Date() })
                 .where("tradeSignalId IN (:...ids)", { ids })
                 .execute();
             // Fetch signals
             const signals = await qr.manager
-                .getRepository(CTradeSignals_1.CTradeSignal)
-                .createQueryBuilder("cts")
-                .leftJoinAndSelect("cts.brokerJob", "bj")
-                .leftJoinAndSelect("bj.credential", "bc")
-                .where("cts.id IN (:...ids)", { ids })
-                .andWhere("bc.keyName = :keyName", { keyName: "CT" })
+                .getRepository(TradeSignals_1.TradeSignal)
+                .createQueryBuilder("ts")
+                .leftJoinAndSelect("ts.tradingAccount", "ta")
+                .leftJoinAndSelect("ta.broker", "b")
+                .where("ts.id IN (:...ids)", { ids })
+                .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
                 .getMany();
-            console.log("Claimed trade signals:", signals);
-            //   find({
-            //     where: { id: In(ids) },
-            //   });
             // keep order as ids
             const map = new Map(signals.map((s) => [s.id, s]));
             const ordered = ids.map((id) => map.get(id)).filter(Boolean);
             const badIds = [];
             const structured = [];
             for (const s of ordered) {
-                const userId = s?.brokerJob?.credential?.brokerAccountId;
-                if (!userId || !Number.isFinite(Number(userId))) {
+                const userId = s?.userId;
+                const tradingAccountId = Number(s?.tradingAccount?.id ?? s?.tradingAccountId);
+                const accountId = Number(s?.tradingAccount?.accountId);
+                const env = String(s?.tradingAccount?.accountMeta?.env ?? "").trim().toLowerCase();
+                const accessToken = String(s?.tradingAccount?.accessToken ?? "").trim();
+                const refreshToken = String(s?.tradingAccount?.refreshToken ?? "").trim();
+                if (!userId ||
+                    !Number.isFinite(Number(userId)) ||
+                    !Number.isFinite(tradingAccountId) ||
+                    tradingAccountId <= 0 ||
+                    !Number.isFinite(accountId) ||
+                    accountId <= 0 ||
+                    !accessToken) {
                     badIds.push(s.id);
                     continue;
                 }
                 structured.push({
                     id: s.id,
-                    jobId: Number(s.jobId),
+                    jobId: Number(s.id),
+                    tradingAccountId,
+                    accountId,
+                    ...((env === "demo" || env === "live") ? { env } : {}),
+                    accessToken,
+                    ...(refreshToken ? { refreshToken } : {}),
                     action: String(s.action),
                     symbol: String(s.symbol),
                     price: String(s.price), // numeric -> string
@@ -131,12 +161,12 @@ class CTradeSignalDB {
                     userId: Number(userId),
                 });
             }
-            // 6) Any bad ones -> set status FAILED so they don’t keep getting re-claimed forever
+            // Any bad ones -> set status failed so they don’t keep getting re-claimed forever
             if (badIds.length) {
                 await statusRepo
                     .createQueryBuilder()
-                    .update(CTradeSignals_1.CTradeSignalStatus)
-                    .set({ status: "FAILED", updatedAt: new Date() })
+                    .update(TradeSignalsStatus_1.TradeSignalStatus)
+                    .set({ status: "failed", updatedAt: new Date() })
                     .where("tradeSignalId IN (:...ids)", { ids: badIds })
                     .execute();
             }
@@ -152,14 +182,143 @@ class CTradeSignalDB {
         }
     }
     async updateTradeStatus(data) {
+        const ids = data.map((d) => d.id).filter(Boolean);
+        if (!ids.length)
+            return;
+        const jobs = await this.tradeSignalRepo.find({
+            where: { id: (0, typeorm_1.In)(ids) },
+            relations: ["status"],
+        });
+        const jobMap = new Map(jobs.map((j) => [j.id, j]));
         await Promise.all(data.map(async (item) => {
-            await this.repoStatus
+            const job = jobMap.get(item.id);
+            if (!job?.status?.id)
+                return;
+            const status = String(item.status ?? "").toLowerCase();
+            if (status === "in_progress" || status === "processing") {
+                await this.markJobInProgress(job);
+                return;
+            }
+            if (status === "completed" || status === "success" || status === "executed") {
+                if (item.orderId !== undefined) {
+                    job.orderId = Number(item.orderId);
+                    await this.tradeSignalRepo.save(job);
+                }
+                await this.markJobSuccess(job);
+                return;
+            }
+            if (status === "closed") {
+                await this.markJobCloseSuccess(job);
+                return;
+            }
+            if (status === "failed" || status === "error") {
+                await this.markJobFailed(job, item.error ?? "execution_failed");
+                return;
+            }
+            await this.tradeSignalStatusRepo
                 .createQueryBuilder()
-                .update(CTradeSignals_1.CTradeSignalStatus)
+                .update(TradeSignalsStatus_1.TradeSignalStatus)
                 .set({ status: item.status, updatedAt: new Date() })
-                .where("trade_signal_id = :id", { id: item.id })
+                .where("tradeSignalId = :id", { id: item.id })
                 .execute();
         }));
+    }
+    async claimPendingCloseTrades(limit) {
+        const qr = data_source_1.default.createQueryRunner();
+        await qr.connect();
+        await qr.startTransaction();
+        try {
+            const statusRepo = qr.manager.getRepository(TradeSignalsStatus_1.TradeSignalStatus);
+            const qb = statusRepo
+                .createQueryBuilder("s")
+                .leftJoinAndSelect("s.tradeSignal", "ts")
+                .leftJoinAndSelect("ts.tradingAccount", "ta")
+                .leftJoinAndSelect("ta.broker", "b")
+                .select("s.tradeSignalId", "id")
+                .where("s.status = :status", { status: "pending_close" })
+                .andWhere("b.code = :code", { code: "CT" })
+                .orderBy("s.tradeSignalId", "ASC")
+                .limit(limit)
+                .setLock("pessimistic_write");
+            if (typeof qb.setOnLocked === "function")
+                qb.setOnLocked("skip_locked");
+            const rows = await qb.getRawMany();
+            //console.log("Claiming pending close trades", { rows });
+            const ids = rows.map((r) => Number(r.id)).filter(Boolean);
+            if (!ids.length) {
+                await qr.commitTransaction();
+                return [];
+            }
+            await statusRepo
+                .createQueryBuilder()
+                .update(TradeSignalsStatus_1.TradeSignalStatus)
+                .set({ status: "in_progress", updatedAt: new Date() })
+                .where("tradeSignalId IN (:...ids)", { ids })
+                .execute();
+            // Fetch signals with orderId
+            const signals = await qr.manager
+                .getRepository(TradeSignals_1.TradeSignal)
+                .createQueryBuilder("ts")
+                .leftJoinAndSelect("ts.tradingAccount", "ta")
+                .leftJoinAndSelect("ta.broker", "b")
+                .where("ts.id IN (:...ids)", { ids })
+                .andWhere("(b.code = :code OR b.name = :name)", { code: "CT", name: "CTrader" })
+                .getMany();
+            // Keep order as ids
+            const map = new Map(signals.map((s) => [s.id, s]));
+            const ordered = ids.map((id) => map.get(id)).filter(Boolean);
+            const badIds = [];
+            const structured = [];
+            for (const s of ordered) {
+                const userId = Number(s?.userId);
+                const orderId = s?.orderId;
+                const tradingAccountId = Number(s?.tradingAccount?.id ?? s?.tradingAccountId);
+                const accountId = Number(s?.tradingAccount?.accountId);
+                const env = String(s?.tradingAccount?.accountMeta?.env ?? "").trim().toLowerCase();
+                const accessToken = String(s?.tradingAccount?.accessToken ?? "").trim();
+                const refreshToken = String(s?.tradingAccount?.refreshToken ?? "").trim();
+                if (!Number.isFinite(userId) ||
+                    userId <= 0 ||
+                    !orderId ||
+                    !Number.isFinite(Number(orderId)) ||
+                    !Number.isFinite(tradingAccountId) ||
+                    tradingAccountId <= 0 ||
+                    !Number.isFinite(accountId) ||
+                    accountId <= 0 ||
+                    !accessToken) {
+                    badIds.push(s.id);
+                    continue;
+                }
+                structured.push({
+                    id: s.id,
+                    userId,
+                    tradingAccountId,
+                    accountId,
+                    ...((env === "demo" || env === "live") ? { env } : {}),
+                    accessToken,
+                    ...(refreshToken ? { refreshToken } : {}),
+                    orderId: Number(orderId),
+                });
+            }
+            // Mark bad ones as failed
+            if (badIds.length) {
+                await statusRepo
+                    .createQueryBuilder()
+                    .update(TradeSignalsStatus_1.TradeSignalStatus)
+                    .set({ status: "failed", updatedAt: new Date() })
+                    .where("tradeSignalId IN (:...ids)", { ids: badIds })
+                    .execute();
+            }
+            await qr.commitTransaction();
+            return structured;
+        }
+        catch (e) {
+            await qr.rollbackTransaction();
+            throw e;
+        }
+        finally {
+            await qr.release();
+        }
     }
 }
 exports.CTradeSignalDB = CTradeSignalDB;

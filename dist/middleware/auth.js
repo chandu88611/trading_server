@@ -146,7 +146,7 @@ function requireWebhookAuth() {
             req.webhookAuth = {
                 userId: String(decoded.userId),
                 subscriptionId: decoded.subscriptionId ? String(decoded.subscriptionId) : undefined,
-                planId: decoded.planId ? String(decoded.planId) : undefined,
+                planId: decoded.planId ? decoded.planId : undefined,
             };
             console.log("[WEBHOOK_AUTH] ✅ userId:", req.webhookAuth.userId);
             return next();

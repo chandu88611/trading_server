@@ -19,11 +19,6 @@ class SubscriptionPlanDBService {
         this.planRepo = data_source_1.default.getRepository(SubscriptionPlan_1.SubscriptionPlan);
         this.typeRepo = data_source_1.default.getRepository(PlanType_1.PlanType);
         this.marketRepo = data_source_1.default.getRepository(Market_1.Market);
-        this.pricingRepo = data_source_1.default.getRepository(PlanPricing_1.PlanPricing);
-        this.limitsRepo = data_source_1.default.getRepository(PlanLimits_1.PlanLimits);
-        this.featureRepo = data_source_1.default.getRepository(PlanFeature_1.PlanFeature);
-        this.bundleRepo = data_source_1.default.getRepository(PlanBundleItem_1.PlanBundleItem);
-        this.planStrategyRepo = data_source_1.default.getRepository(PlanStrategy_1.PlanStrategy);
     }
     async createPlan(payload) {
         const planType = await this.typeRepo.findOne({
@@ -39,14 +34,14 @@ class SubscriptionPlanDBService {
         }
         return data_source_1.default.transaction(async (trx) => {
             const planRepo = trx.getRepository(SubscriptionPlan_1.SubscriptionPlan);
-            // BIGINT -> string (SubscriptionPlan.planTypeId/marketId are string)
+            // BIGINT ids (SubscriptionPlan.planTypeId/marketId are numbers)
             const plan = planRepo.create({
                 name: payload.name.trim(),
                 description: payload.description ?? null,
                 isActive: payload.isActive ?? true,
                 metadata: payload.metadata ?? {},
-                planTypeId: String(planType.id),
-                marketId: market ? String(market.id) : null,
+                planTypeId: planType.id,
+                marketId: market ? market.id : null,
             });
             const savedPlan = await planRepo.save(plan);
             // pricing (unique plan_id)
@@ -84,22 +79,22 @@ class SubscriptionPlanDBService {
                 // insert avoids DeepPartial overload issues + is faster
                 await featureRepo.insert(rows);
             }
-            // strategies mapping (insert bulk) ✅ FIXES PlanStrategy[][]
+            // strategies mapping (insert bulk)
             if (payload.strategyIds?.length) {
                 const psRepo = trx.getRepository(PlanStrategy_1.PlanStrategy);
                 const uniq = Array.from(new Set(payload.strategyIds));
                 const rows = uniq.map((sid) => ({
                     planId: savedPlan.id,
-                    strategyId: String(sid), // BIGINT -> string
+                    strategyId: sid,
                 }));
                 await psRepo.insert(rows);
             }
-            // bundle items (insert bulk) ✅ FIXES PlanBundleItem[][]
+            // bundle items (insert bulk)
             if (payload.bundleItems?.length) {
                 const bRepo = trx.getRepository(PlanBundleItem_1.PlanBundleItem);
                 const rows = payload.bundleItems.map((bi) => ({
                     bundlePlanId: savedPlan.id,
-                    includedPlanId: bi.includedPlanId, // (should be uuid string in your model)
+                    includedPlanId: bi.includedPlanId,
                     quantity: bi.quantity ?? 1,
                 }));
                 await bRepo.insert(rows);
@@ -140,7 +135,7 @@ class SubscriptionPlanDBService {
                 });
                 if (!pt)
                     throw badRequest(`Invalid planTypeCode=${payload.planTypeCode}`);
-                updatePlan.planTypeId = String(pt.id);
+                updatePlan.planTypeId = pt.id;
             }
             // marketCode -> id / null
             if (payload.marketCode !== undefined) {
@@ -153,7 +148,7 @@ class SubscriptionPlanDBService {
                     });
                     if (!mk)
                         throw badRequest(`Invalid marketCode=${payload.marketCode}`);
-                    updatePlan.marketId = String(mk.id);
+                    updatePlan.marketId = mk.id;
                 }
             }
             if (Object.keys(updatePlan).length > 0) {
@@ -218,7 +213,7 @@ class SubscriptionPlanDBService {
                     const uniq = Array.from(new Set(payload.strategyIds));
                     const rows = uniq.map((sid) => ({
                         planId: id,
-                        strategyId: String(sid),
+                        strategyId: sid,
                     }));
                     await psRepo.insert(rows);
                 }

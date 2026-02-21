@@ -1,7 +1,7 @@
 "use strict";
 // assetClassifier.ts
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AssetClassifier = exports.AssetType = void 0;
+exports.AssetClassifier = exports.MarketType = exports.AssetType = void 0;
 var AssetType;
 (function (AssetType) {
     AssetType["FOREX"] = "FOREX";
@@ -12,6 +12,12 @@ var AssetType;
     AssetType["FUTURES"] = "FUTURES";
     AssetType["UNKNOWN"] = "UNKNOWN";
 })(AssetType || (exports.AssetType = AssetType = {}));
+var MarketType;
+(function (MarketType) {
+    MarketType["FOREX"] = "FOREX";
+    MarketType["CRYPTO"] = "CRYPTO";
+    MarketType["INDIAN"] = "INDIAN";
+})(MarketType || (exports.MarketType = MarketType = {}));
 class AssetClassifier {
     // -----------------------------
     // Public API

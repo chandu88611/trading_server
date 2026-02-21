@@ -57,6 +57,7 @@ export class AlertSnapshotService {
 }[] = await this.tradingAccountService.getAllCopyTradingAccounts(payload.userId, brokerData);
       let tradeSignalPayload: ICreateTradeSignal[] = []
       if(userTradingAccounts.length > 0) {
+        console.log("Creating trade signals for user", userTradingAccounts);
         tradeSignalPayload = userTradingAccounts.map(account => ({
           userId: account.userId,
           tradingAccountId: account.id,

@@ -21,8 +21,8 @@ __decorate([
 ], PlanLimits.prototype, "id", void 0);
 __decorate([
     (0, typeorm_1.Index)({ unique: true }),
-    (0, typeorm_1.Column)({ name: "plan_id", type: "uuid" }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: "plan_id", type: "bigint" }),
+    __metadata("design:type", Number)
 ], PlanLimits.prototype, "planId", void 0);
 __decorate([
     (0, typeorm_1.OneToOne)(() => SubscriptionPlan_1.SubscriptionPlan, (p) => p.limits, { onDelete: "CASCADE" }),

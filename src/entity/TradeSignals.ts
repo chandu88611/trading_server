@@ -41,6 +41,9 @@ export class TradeSignal {
   @Column({name: "volume", type: "numeric", precision: 20, scale: 2})
   volume!: number;
 
+  @Column({ name: "order_id", type: "bigint", nullable: true })
+  orderId?: number;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 

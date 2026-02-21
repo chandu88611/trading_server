@@ -6,6 +6,62 @@ export class Mt5ListenerController {
     private readonly service: Mt5ListenerServices
   ) {}
 
+  private parseJson(raw: string): any | null {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeAckBody(body: unknown): Record<string, unknown> {
+    if (body == null) return {};
+
+    if (Buffer.isBuffer(body)) {
+      const parsed = this.parseJson(body.toString("utf8").replace(/\0/g, "").trim());
+      return parsed && typeof parsed === "object" ? parsed : {};
+    }
+
+    if (typeof body === "string") {
+      const parsed = this.parseJson(body.replace(/\0/g, "").trim());
+      return parsed && typeof parsed === "object" ? parsed : {};
+    }
+
+    if (typeof body !== "object") return {};
+
+    const payload = body as Record<string, unknown>;
+    if (
+      "ackId" in payload ||
+      "status" in payload ||
+      "ticket" in payload ||
+      "order_id" in payload ||
+      "orderId" in payload
+    ) {
+      return payload;
+    }
+
+    const keys = Object.keys(payload);
+    if (!keys.length) return {};
+
+    if (keys.length === 1) {
+      const singleKeyRaw = keys[0].replace(/\0/g, "").trim();
+      const parsedSingleKey = this.parseJson(singleKeyRaw);
+      if (parsedSingleKey && typeof parsedSingleKey === "object") {
+        return parsedSingleKey;
+      }
+    }
+
+    // MT5 can post JSON with "application/x-www-form-urlencoded"; "&" inside message
+    // splits the JSON into multiple keys. Rebuild and parse the raw payload shape.
+    const rebuiltFromKeys = keys.join("&").replace(/\0/g, "").trim();
+    const parsedFromKeys = this.parseJson(rebuiltFromKeys);
+    if (parsedFromKeys && typeof parsedFromKeys === "object") {
+      return parsedFromKeys;
+    }
+
+    return payload;
+  }
+
   async listenSignal(req: Request, res: Response) {
     try {
       const brokerAccountId = String(req.query.userId || "");
@@ -21,16 +77,7 @@ export class Mt5ListenerController {
 
   async ackListenSignal(req: Request, res: Response) {
     try {
-      let body: any = req.body;
-
-      if (
-        typeof body === "object" &&
-        Object.keys(body).length === 1
-      ) {
-        const raw = Object.keys(body)[0];
-        body = JSON.parse(raw.replace(/\0/g, ""));
-      }
-
+      const body = this.normalizeAckBody(req.body);
       await this.service.handleAck(body);
       return res.json({ ok: true });
     } catch (err) {

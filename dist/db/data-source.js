@@ -11,13 +11,10 @@ const entity_1 = require("../entity");
 const AlertSnapshots_1 = require("../entity/AlertSnapshots");
 const TradeSignals_1 = require("../entity/TradeSignals");
 const UserBillingDetails_1 = require("../entity/UserBillingDetails");
-const CopyMasterEvent_1 = require("../entity/CopyMasterEvent");
-const CopyTradeTask_1 = require("../entity/CopyTradeTask");
 const CopyTradingFollow_1 = require("../entity/CopyTradingFollow");
 const CopyTradingMaster_1 = require("../entity/CopyTradingMaster");
 const UserTradingAccount_1 = require("../entity/UserTradingAccount");
 const Strategy_1 = require("../entity/Strategy");
-const ForexTraderUserDetails_1 = require("../entity/ForexTraderUserDetails");
 const PlanType_1 = require("../entity/PlanType");
 const Market_1 = require("../entity/Market");
 const PlanPricing_1 = require("../entity/PlanPricing");
@@ -25,7 +22,10 @@ const PlanLimits_1 = require("../entity/PlanLimits");
 const PlanFeature_1 = require("../entity/PlanFeature");
 const PlanBundleItem_1 = require("../entity/PlanBundleItem");
 const PlanStrategy_1 = require("../entity/PlanStrategy");
-const CTradeSignals_1 = require("../entity/CTradeSignals");
+const TradeSignalsStatus_1 = require("../entity/TradeSignalsStatus");
+const Brokers_1 = require("../entity/Brokers");
+const CTraderSession_1 = require("../entity/CTraderSession");
+const CTraderSymbol_1 = require("../entity/CTraderSymbol");
 dotenv_1.default.config();
 const port = process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5449;
 exports.AppDataSource = new typeorm_1.DataSource({
@@ -40,10 +40,6 @@ exports.AppDataSource = new typeorm_1.DataSource({
     entities: [
         entity_1.User,
         entity_1.AuthProvider,
-        entity_1.BrokerCredential,
-        entity_1.BrokerSession,
-        entity_1.BrokerJob,
-        entity_1.BrokerEvent,
         entity_1.RefreshToken,
         AlertSnapshots_1.AlertSnapshot,
         entity_1.SubscriptionInvoice,
@@ -53,12 +49,10 @@ exports.AppDataSource = new typeorm_1.DataSource({
         entity_1.UserSubscription,
         UserBillingDetails_1.UserBillingDetails,
         UserTradingAccount_1.UserTradingAccount,
-        CopyMasterEvent_1.CopyMasterEvent,
-        CopyTradeTask_1.CopyTradeTask,
-        CopyTradingFollow_1.CopyTradingFollow,
+        CopyTradingFollow_1.CopyTradingFollowers,
         CopyTradingMaster_1.CopyTradingMaster,
         Strategy_1.Strategy,
-        ForexTraderUserDetails_1.ForexTraderUserDetails,
+        TradeSignalsStatus_1.TradeSignalStatus,
         PlanType_1.PlanType,
         Market_1.Market,
         PlanPricing_1.PlanPricing,
@@ -66,8 +60,9 @@ exports.AppDataSource = new typeorm_1.DataSource({
         PlanFeature_1.PlanFeature,
         PlanBundleItem_1.PlanBundleItem,
         PlanStrategy_1.PlanStrategy,
-        CTradeSignals_1.CTradeSignal,
-        CTradeSignals_1.CTradeSignalStatus
+        Brokers_1.Broker,
+        CTraderSession_1.CTraderSession,
+        CTraderSymbol_1.CTraderSymbol,
     ],
     migrations: [],
     subscribers: [],

@@ -25,6 +25,12 @@ export class TradeRouter {
       requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.getTradeHistory.bind(this.controller)
     );
+
+    this.routes.post(
+      "/close",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.closeTrade.bind(this.controller)
+    )
   }
 
   getRouter() {

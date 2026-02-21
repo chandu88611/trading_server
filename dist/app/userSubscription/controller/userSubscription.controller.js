@@ -35,10 +35,24 @@ class UserSubscriptionController {
     }
     async current(req, res) {
         const userId = req.auth.userId;
-        const subscription = await this.service.getCurrentSubscription(userId);
+        const start = Number(req.query.start || 0);
+        const count = Number(req.query.count || 20);
+        const searchParams = req.query.searchParams;
+        const subscription = await this.service.getCurrentSubscription(userId, start, count, searchParams);
         res.status(200).json({
             message: "Fetched current subscription",
-            data: subscription,
+            subscription,
+        });
+    }
+    async followerUserTradingAccount(req, res) {
+        const userId = req.auth.userId;
+        const start = Number(req.query.start || 0);
+        const count = Number(req.query.count || 20);
+        const searchParams = req.query.searchParams;
+        const followers = await this.service.getFollowerUserTradingAccount(userId, start, count, searchParams);
+        res.status(200).json({
+            message: "Fetched follower user trading account",
+            followers,
         });
     }
     async getUserSubscriptions(req, res) {
@@ -56,6 +70,17 @@ class UserSubscriptionController {
         res.status(200).json({
             message: "Fetched all subscriptions",
             data,
+        });
+    }
+    async updateWebhookStatus(req, res) {
+        const { subscriptionId, isWebhookEnabled } = req.body;
+        if (subscriptionId === undefined || isWebhookEnabled === undefined) {
+            res.status(400).json({ message: "subscriptionId and isWebhookEnabled are required" });
+            return;
+        }
+        await this.service.updateSubscriptionWebhookStatus(subscriptionId, isWebhookEnabled);
+        res.status(200).json({
+            message: "Subscription webhook status updated successfully",
         });
     }
 }
@@ -83,6 +108,12 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
+], UserSubscriptionController.prototype, "followerUserTradingAccount", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
 ], UserSubscriptionController.prototype, "getUserSubscriptions", null);
 __decorate([
     (0, error_handler_1.ControllerError)(),
@@ -90,3 +121,9 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], UserSubscriptionController.prototype, "adminGetAll", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], UserSubscriptionController.prototype, "updateWebhookStatus", null);

@@ -13,7 +13,6 @@ exports.User = void 0;
 // src/entity/User.ts
 const typeorm_1 = require("typeorm");
 const AuthProvider_1 = require("./AuthProvider");
-const BrokerCredential_1 = require("./BrokerCredential");
 let User = class User {
 };
 exports.User = User;
@@ -149,10 +148,6 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => AuthProvider_1.AuthProvider, (ap) => ap.user),
     __metadata("design:type", Array)
 ], User.prototype, "authProviders", void 0);
-__decorate([
-    (0, typeorm_1.OneToMany)(() => BrokerCredential_1.BrokerCredential, (bc) => bc.user),
-    __metadata("design:type", Array)
-], User.prototype, "brokerCredentials", void 0);
 exports.User = User = __decorate([
     (0, typeorm_1.Entity)({ name: "users" })
 ], User);

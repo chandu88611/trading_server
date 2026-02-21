@@ -10,41 +10,43 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CTraderController = void 0;
-const error_handler_1 = require("../../../types/error-handler"); // adjust path
-const cTrader_1 = require("../services/cTrader"); // adjust path
+const error_handler_1 = require("../../../types/error-handler");
+const cTrader_1 = require("../services/cTrader");
 class CTraderController {
     constructor() {
         this.service = new cTrader_1.CTraderService();
     }
+    parsePositiveInt(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num <= 0)
+            return null;
+        return num;
+    }
     async generateTokens(req, res) {
         try {
-            //   const userId = (req as any).auth?.userId as number;
-            //   if (!userId || !Number.isFinite(Number(userId))) {
-            //     return res.status(401).json({ error: "unauthorized" });
-            //   }
-            console.log("CTraderController.generateTokens called", req.body);
             const code = String(req.body?.code ?? "").trim();
             const accountIdRaw = req.body?.accountId ?? req.body?.account_id;
-            const accountId = Number(accountIdRaw);
+            const accountId = this.parsePositiveInt(accountIdRaw);
             if (!code) {
                 return res.status(400).json({ error: "code_required" });
             }
-            if (!Number.isFinite(accountId) || accountId <= 0) {
+            if (!accountId) {
                 return res.status(400).json({ error: "accountId_required" });
             }
-            const ex = await this.service.exchangeOAuthCode(accountId, code);
-            if (!ex.ok) {
-                return res.status(ex.status ?? 502).json({
+            const result = await this.service.completeOAuthAndVerifyByCTraderAccountId(String(accountId), code);
+            if (!result.ok) {
+                return res.status(result.status ?? 502).json({
                     error: "ctrader_oauth_exchange_failed",
-                    details: ex.error,
-                    payload: ex.payload,
+                    details: result.details ?? result.error,
                 });
             }
-            console.log("CTraderController.generateTokens success", { accountId, exchangePayload: ex.payload });
             return res.status(200).json({
                 message: "cTrader connected",
                 data: {
-                    exchange: ex.payload,
+                    accountId,
+                    userId: result.userId,
+                    rowId: result.rowId,
+                    ctraderAccountId: result.ctraderAccountId,
                 },
             });
         }
@@ -57,57 +59,31 @@ class CTraderController {
     }
     async oauthCallback(req, res) {
         try {
-            // DO NOT log req.query (contains OAuth code)
             const code = String(req.query?.code ?? "").trim();
-            const state = String(req.query?.state ?? "").trim(); // we treat it as accountId
-            console.log("cTrader OAuth callback received", { code: code ? "present" : "missing", state });
+            const state = String(req.query?.state ?? "").trim();
             if (!code)
                 return res.status(400).json({ error: "code_required" });
             if (!state)
                 return res.status(400).json({ error: "state_required" });
-            // userId must come from your auth/session (cookie/JWT middleware)
-            //   const userId = (req as any).auth?.userId as number;
-            //   if (!userId || !Number.isFinite(Number(userId))) {
-            //     return res.status(401).json({ error: "unauthorized" });
-            //   }
-            const accountId = Number(state);
-            if (!Number.isFinite(accountId) || accountId <= 0) {
+            const accountId = this.parsePositiveInt(state);
+            if (!accountId) {
                 return res.status(400).json({ error: "invalid_state_accountId" });
             }
-            // 1) exchange code -> store tokens for THIS user
-            const ex = await this.service.exchangeOAuthCode(state, code);
-            if (!ex.ok) {
-                return res.status(ex.status ?? 502).json({
-                    error: "ctrader_oauth_exchange_failed",
-                    details: ex.error,
-                    payload: ex.payload,
-                });
+            const result = await this.service.completeOAuthAndVerifyByCTraderAccountId(state, code);
+            if (!result.ok) {
+                return res.status(result.status).json({ error: result.error, details: result.details });
             }
-            // 2) authorize/switch selected accountId for THIS user
-            //   const auth = await this.service.authorizeAccount(userId, accountId);
-            //   if (!auth.ok) {
-            //     return res.status(auth.status ?? 502).json({
-            //       error: "ctrader_account_auth_failed",
-            //       details: auth.error,
-            //       payload: auth.payload,
-            //     });
-            //   }
-            const statee = String(req.query?.state ?? "").trim(); // "5747051"
-            const codee = String(req.query?.code ?? "").trim();
-            const result = await this.service.completeOAuthAndVerifyByCTraderAccountId(statee, codee);
-            // if (!result.ok) {
-            //   return res.status(result.status).json({ error: result.error, details: result.details });
-            // }
-            const next = `https://tradebro.io/forex-trading`;
-            return res.redirect(302, next);
-            //   return res.status(200).json({
-            //     message: "cTrader connected via callback",
-            //     data: {
-            //       exchange: ex.payload,
-            //     //   authAccount: auth.payload,
-            //       accountId,
-            //     },
-            //   });
+            // return res.status(200).json({
+            //   message: "cTrader OAuth callback processed",
+            //   data: {
+            //     accountId,
+            //     userId: result.userId,
+            //     rowId: result.rowId,
+            //     ctraderAccountId: result.ctraderAccountId,
+            //   },
+            // });
+            // redirect to https://tradebro.io/profile
+            return res.redirect("https://tradebro.io/profile");
         }
         catch (error) {
             return res.status(500).json({

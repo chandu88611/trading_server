@@ -43,9 +43,6 @@ export class CopyTradingMaster {
   @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
-  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
-  metadata!: Record<string, any>;
-
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 

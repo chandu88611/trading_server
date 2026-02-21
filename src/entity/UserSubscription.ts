@@ -15,6 +15,7 @@ import { SubscriptionPlan } from "./SubscriptionPlan";
 import { SubscriptionStatus } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
 import { UserTradingAccount } from "./UserTradingAccount";
 import { CopyTradingFollowers } from "./CopyTradingFollow";
+import { Market } from "./Market";
 
 @Entity({ name: "user_subscriptions" })
 export class UserSubscription {
@@ -60,6 +61,9 @@ export class UserSubscription {
 
   @Column({ name: "start_date", type: "timestamptz", default: () => "now()" })
   startDate!: Date;
+
+  @Column({name: "is_webhook_enabled", type: "boolean", default: false})
+  isWebhookEnabled!: boolean;
 
   @Column({ name: "end_date", type: "timestamptz", nullable: true })
   endDate!: Date | null;

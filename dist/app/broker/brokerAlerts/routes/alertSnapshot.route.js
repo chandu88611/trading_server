@@ -8,7 +8,4 @@ const ctrl = new alertSnapshot_controller_1.AlertSnapshotController();
 const router = (0, express_1.Router)();
 router.post("/", authFromQuery_1.authFromQueryToken, (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.create.bind(ctrl));
 router.get("/history", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.getHistory.bind(ctrl));
-router.get("/timeline", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.getTimeline.bind(ctrl));
-router.get("/jobs/open", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.getOpenJobs.bind(ctrl));
-router.get("/job/:jobId", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), ctrl.listByJob.bind(ctrl));
 exports.default = router;

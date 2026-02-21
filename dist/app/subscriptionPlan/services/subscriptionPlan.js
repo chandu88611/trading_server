@@ -30,7 +30,7 @@ class SubscriptionPlanService {
         });
     }
     async getPlan(id) {
-        if (!id?.trim()) {
+        if (!id || isNaN(id)) {
             throw { statusCode: constants_1.HttpStatusCode._BAD_REQUEST, message: "Invalid planId" };
         }
         const plan = await this.db.getPlanById(id);
@@ -40,7 +40,7 @@ class SubscriptionPlanService {
         return plan;
     }
     async updatePlan(id, payload) {
-        if (!id?.trim()) {
+        if (!id || isNaN(id)) {
             throw { statusCode: constants_1.HttpStatusCode._BAD_REQUEST, message: "Invalid planId" };
         }
         const existing = await this.db.getPlanById(id);
@@ -58,7 +58,7 @@ class SubscriptionPlanService {
         return true;
     }
     async deactivatePlan(id) {
-        if (!id?.trim()) {
+        if (!id || isNaN(id)) {
             throw { statusCode: constants_1.HttpStatusCode._BAD_REQUEST, message: "Invalid planId" };
         }
         const plan = await this.db.getPlanById(id);

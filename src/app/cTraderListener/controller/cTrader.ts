@@ -29,18 +29,21 @@ export class CTraderController {
         return res.status(400).json({ error: "accountId_required" });
       }
 
-      const ex = await this.service.exchangeOAuthCode(accountId, code);
-      if (!ex.ok) {
-        return res.status(ex.status ?? 502).json({
+      const result = await this.service.completeOAuthAndVerifyByCTraderAccountId(String(accountId), code);
+      if (!result.ok) {
+        return res.status(result.status ?? 502).json({
           error: "ctrader_oauth_exchange_failed",
-          details: ex.error,
+          details: result.details ?? result.error,
         });
       }
 
       return res.status(200).json({
         message: "cTrader connected",
         data: {
-          exchange: ex.payload,
+          accountId,
+          userId: result.userId,
+          rowId: result.rowId,
+          ctraderAccountId: result.ctraderAccountId,
         },
       });
     } catch (error: any) {
@@ -54,7 +57,6 @@ export class CTraderController {
   @ControllerError()
   async oauthCallback(req: Request, res: Response) {
     try {
-      // DO NOT log req.query (contains OAuth code)
       const code = String((req.query as any)?.code ?? "").trim();
       const state = String((req.query as any)?.state ?? "").trim();
 
@@ -70,16 +72,17 @@ export class CTraderController {
       if (!result.ok) {
         return res.status(result.status).json({ error: result.error, details: result.details });
       }
-
-      return res.status(200).json({
-        message: "cTrader OAuth callback processed",
-        data: {
-          accountId,
-          userId: result.userId,
-          rowId: result.rowId,
-          ctraderAccountId: result.ctraderAccountId,
-        },
-      });
+      // return res.status(200).json({
+      //   message: "cTrader OAuth callback processed",
+      //   data: {
+      //     accountId,
+      //     userId: result.userId,
+      //     rowId: result.rowId,
+      //     ctraderAccountId: result.ctraderAccountId,
+      //   },
+      // });
+      // redirect to https://tradebro.io/profile
+      return res.redirect("https://tradebro.io/profile");
     } catch (error: any) {
       return res.status(500).json({
         error: "Failed to handle OAuth callback",

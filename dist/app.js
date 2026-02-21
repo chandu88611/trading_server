@@ -235,7 +235,11 @@ class Server {
             if (!data_source_1.default.isInitialized) {
                 await data_source_1.default.initialize();
             }
-            await (0, validateSchema_1.default)(data_source_1.default);
+            const enableSchemaValidation = String(process.env.ENABLE_SCHEMA_VALIDATION || "").toLowerCase() ===
+                "true";
+            if (enableSchemaValidation) {
+                await (0, validateSchema_1.default)(data_source_1.default);
+            }
             (0, kite_1.initKite)().catch(console.error);
             this.app.listen(this.port, () => {
                 console.log(`🚀 Server running on ${this.port}`);

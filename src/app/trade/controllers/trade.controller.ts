@@ -41,4 +41,19 @@ export class TradeController {
     const result = await this.service.getTradeHistory({userId, accountId: String(accountId), start: Number(start), count: Number(count), searchParams: searchParams as string, status: status as string});
     res.status(200).json(result);
   }
+
+  @ControllerError()
+  async closeTrade(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    let { signalIds, isCloseAll } = req.body ?? {};
+    if((signalIds == null || signalIds.length === 0) && (isCloseAll == null || isCloseAll === undefined || isCloseAll === false)){
+      res.status(400).json({ message: "missing_signal_ids" });
+      return;
+    }
+    if(isCloseAll == null || isCloseAll === undefined){
+      isCloseAll = false;
+    }
+    const result = await this.service.closeTrade(signalIds.map(Number), userId, isCloseAll);
+    res.status(200).json(result);
+  }
 }
