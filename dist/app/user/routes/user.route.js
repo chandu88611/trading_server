@@ -21,6 +21,8 @@ class UserRouter {
         this.userRoutes.put("/billing", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), userController.updateBillingDetails.bind(userController));
         this.userRoutes.put("/copy-trade-status", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), userController.updateCopyTradeStatus.bind(userController));
         this.userRoutes.put("/trade-status", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), userController.updateTradeStatus.bind(userController));
+        this.userRoutes.get("/edging-status", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), userController.getEdgingStatus.bind(userController));
+        this.userRoutes.put("/edging-status", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), userController.updateEdgingStatus.bind(userController));
         this.userRoutes.get("/me", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), userController.getUserDetails.bind(userController));
     }
     getRouter() {

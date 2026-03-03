@@ -18,7 +18,9 @@ const tradingAccount_route_1 = require("../tradingAccount/routes/tradingAccount.
 const mt5Listener_routes_1 = require("../mt5Listener/mt5Listener.routes");
 const ctraderRoutes_1 = __importDefault(require("../ctrader/ctraderRoutes"));
 const zebu_1 = require("../zebu/routes/zebu");
+const dhan_1 = require("../dhan/routes/dhan");
 const trade_route_1 = require("../trade/routes/trade.route");
+const strategy_route_1 = require("../strategy/routes/strategy.route");
 class ApplicationRouter {
     constructor() {
         this.applicationRoutes = (0, express_1.Router)();
@@ -41,7 +43,9 @@ class ApplicationRouter {
         this.applicationRoutes.use("/signal", new mt5Listener_routes_1.Mt5ListenerRouter().getRouter());
         this.applicationRoutes.use("/ctrader", ctraderRoutes_1.default);
         this.applicationRoutes.use("/zebu", new zebu_1.ZebuRouter().getRouter());
+        this.applicationRoutes.use("/dhan", new dhan_1.DhanRouter().getRouter());
         this.applicationRoutes.use("/trade", new trade_route_1.TradeRouter().getRouter());
+        this.applicationRoutes.use("/strategy", new strategy_route_1.StrategyRouter().getRouter());
     }
     getRouter() {
         return this.applicationRoutes;

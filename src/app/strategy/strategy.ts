@@ -10,4 +10,16 @@ export class StrategyService {
   list(query: { isActive?: boolean }) {
     return this.db.list(query);
   }
+
+  setStrategyActive(strategyId: number, isActive: boolean) {
+    return this.db.setStrategyActive(strategyId, isActive);
+  }
+
+  setUserStrategyInstanceStatus(
+    userId: number,
+    instanceId: number,
+    status: "active" | "paused"
+  ) {
+    return this.db.setUserStrategyInstanceStatus(userId, instanceId, status);
+  }
 }

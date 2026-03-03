@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StrategyDBService = void 0;
 const data_source_1 = __importDefault(require("../../db/data-source"));
 const Strategy_1 = require("../../entity/Strategy");
+const constants_1 = require("../../types/constants");
 class StrategyDBService {
     constructor() {
         this.repo = data_source_1.default.getRepository(Strategy_1.Strategy);
@@ -15,16 +16,24 @@ class StrategyDBService {
             throw { statusCode: 400, message: "name required" };
         if (!payload?.category?.trim())
             throw { statusCode: 400, message: "category required" };
+        const strategyCode = String(payload.strategyCode ?? payload.strategy_code ?? payload.name)
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "")
+            .slice(0, 120);
         const row = this.repo.create({
+            strategyCode,
             name: payload.name.trim(),
             description: payload.description ?? null,
             category: payload.category.trim(),
-            risk: payload.risk ?? "Medium",
-            marketCodes: Array.isArray(payload.marketCodes) ? payload.marketCodes : [],
-            avgMonthlyReturnPct: payload.avgMonthlyReturnPct ?? 0,
-            winRatePct: payload.winRatePct ?? 0,
-            maxDrawdownPct: payload.maxDrawdownPct ?? 0,
+            version: Number(payload.version ?? 1),
+            defaultParams: payload.defaultParams ?? payload.default_params ?? {},
+            riskProfile: payload.riskProfile ?? payload.risk_profile ?? payload.risk ?? null,
+            capitalRequirement: payload.capitalRequirement ?? payload.capital_requirement ?? null,
             isActive: payload.isActive ?? true,
+            isDeprecated: payload.isDeprecated ?? false,
+            isCopyable: payload.isCopyable ?? true,
         });
         return this.repo.save(row);
     }
@@ -33,6 +42,47 @@ class StrategyDBService {
             where: query.isActive === undefined ? {} : { isActive: query.isActive },
             order: { createdAt: "DESC" },
         });
+    }
+    async setStrategyActive(strategyId, isActive) {
+        if (!Number.isFinite(strategyId) || strategyId <= 0) {
+            throw { statusCode: constants_1.HttpStatusCode._BAD_REQUEST, message: "invalid_strategy_id" };
+        }
+        const rows = await this.repo.manager.query(`
+      UPDATE strategies
+      SET is_active = $2,
+          updated_at = now()
+      WHERE id = $1
+      RETURNING id, strategy_code, name, is_active, updated_at
+      `, [strategyId, isActive]);
+        const row = rows?.[0];
+        if (!row) {
+            throw { statusCode: constants_1.HttpStatusCode._NOT_FOUND, message: "strategy_not_found" };
+        }
+        return row;
+    }
+    async setUserStrategyInstanceStatus(userId, instanceId, status) {
+        if (!Number.isFinite(userId) || userId <= 0) {
+            throw { statusCode: constants_1.HttpStatusCode._UNAUTHORISED, message: "user_not_authorized" };
+        }
+        if (!Number.isFinite(instanceId) || instanceId <= 0) {
+            throw { statusCode: constants_1.HttpStatusCode._BAD_REQUEST, message: "invalid_instance_id" };
+        }
+        const rows = await this.repo.manager.query(`
+      UPDATE user_strategy_instances
+      SET status = $3,
+          paused_at = CASE WHEN $3 = 'paused' THEN now() ELSE NULL END,
+          updated_at = now()
+      WHERE id = $1 AND user_id = $2
+      RETURNING id, user_id, strategy_id, trading_account_id, status, paused_at, updated_at
+      `, [instanceId, userId, status]);
+        const row = rows?.[0];
+        if (!row) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._NOT_FOUND,
+                message: "user_strategy_instance_not_found",
+            };
+        }
+        return row;
     }
 }
 exports.StrategyDBService = StrategyDBService;

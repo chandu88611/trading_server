@@ -5,6 +5,12 @@ import { HttpStatusCode } from "../../../types/constants";
 
 export type CreateTradingAccountPayload = {
   broker?: string | null;
+  accountId?: string | null;
+  clientId?: string | null;
+  apiKey?: string | null;
+  vendorCode?: string | null;
+  appKey?: string | null;
+  apiSecret?: string | null;
   isMaster?: boolean;
   executionFlow?: string | null;
   accountLabel?: string | null;
@@ -14,6 +20,7 @@ export type CreateTradingAccountPayload = {
 
 export type UpdateTradingAccountPayload = Partial<{
   isMaster: boolean;
+  isEnabled: boolean;
   executionFlow: string | null;
   accountLabel: string | null;
   accountMeta: Record<string, any> | null;

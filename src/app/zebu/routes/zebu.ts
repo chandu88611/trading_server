@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ZebuController } from "../controller/zebu";
+import { requireAuth, Roles } from "../../../middleware/auth";
 
 export class ZebuRouter {
 	private router: Router;
@@ -12,17 +13,18 @@ export class ZebuRouter {
 	private initRoutes() {
 		const controller = new ZebuController();
 
-		this.router.post("/auth/token", controller.saveToken.bind(controller));
+		this.router.post("/auth/token", requireAuth([Roles.USER, Roles.ADMIN]), controller.saveToken.bind(controller));
+		this.router.post("/auth/token/generate", requireAuth([Roles.USER, Roles.ADMIN]), controller.generateToken.bind(controller));
 
-		this.router.post("/orders/place", controller.placeOrder.bind(controller));
-		this.router.post("/orders/modify", controller.modifyOrder.bind(controller));
-		this.router.post("/orders/cancel", controller.cancelOrder.bind(controller));
+		this.router.post("/orders/place", requireAuth([Roles.USER, Roles.ADMIN]), controller.placeOrder.bind(controller));
+		this.router.post("/orders/modify", requireAuth([Roles.USER, Roles.ADMIN]), controller.modifyOrder.bind(controller));
+		this.router.post("/orders/cancel", requireAuth([Roles.USER, Roles.ADMIN]), controller.cancelOrder.bind(controller));
 
-		this.router.post("/orders", controller.getOrders.bind(controller));
-		this.router.post("/positions", controller.getPositions.bind(controller));
-		this.router.post("/holdings", controller.getHoldings.bind(controller));
+		this.router.post("/orders", requireAuth([Roles.USER, Roles.ADMIN]), controller.getOrders.bind(controller));
+		this.router.post("/positions", requireAuth([Roles.USER, Roles.ADMIN]), controller.getPositions.bind(controller));
+		this.router.post("/holdings", requireAuth([Roles.USER, Roles.ADMIN]), controller.getHoldings.bind(controller));
 
-		this.router.post("/execute-pending", controller.executePending.bind(controller));
+		this.router.post("/execute-pending", requireAuth([Roles.USER, Roles.ADMIN]), controller.executePending.bind(controller));
 	}
 
 	getRouter() {

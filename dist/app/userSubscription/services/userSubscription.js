@@ -14,8 +14,10 @@ class UserSubscriptionService {
         if (!plan)
             throw new Error("Invalid or inactive subscription plan");
         const existing = await this.db.getActiveSubscription(userId, plan);
-        if (existing?.length !== 0)
-            throw new Error("User already has an active subscription");
+        const alreadySubscribedToSamePlan = (existing ?? []).some((sub) => Number(sub.planId) === Number(planId));
+        if (alreadySubscribedToSamePlan) {
+            throw new Error("User already has an active subscription for this plan");
+        }
         // NEW DESIGN: interval comes from pricing.interval
         const interval = plan.pricing?.interval ?? "monthly";
         const durationDays = interval === "monthly" ? 30 : interval === "yearly" ? 365 : 36500; // lifetime ~ 100y

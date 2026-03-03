@@ -5,12 +5,14 @@ import { AuthProvider } from "../../../entity/AuthProvider";
 import { RefreshToken } from "../../../entity/RefreshToken";
 import { HttpStatusCode } from "../../../types/constants";
 import { UserBillingDetails } from "../../../entity/UserBillingDetails";
+import { UserEdgingStatus } from "../../../entity/UserEdgingStatus";
 
 export class UserDBService {
   private userRepo = AppDataSource.getRepository(User);
   private authRepo = AppDataSource.getRepository(AuthProvider);
   private tokenRepo = AppDataSource.getRepository(RefreshToken);
   private billingRepo = AppDataSource.getRepository(UserBillingDetails);
+  private edgingRepo = AppDataSource.getRepository(UserEdgingStatus);
 
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepo.findOne({ where: { email } });
@@ -238,6 +240,56 @@ export class UserDBService {
       }
       user.allowCopyTrade = allowCopyTrade;
       return this.userRepo.save(user);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getEdgingStatus(userId: number): Promise<UserEdgingStatus> {
+    try {
+      let edging = await this.edgingRepo.findOne({
+        where: { userId: String(userId) },
+      });
+
+      if (!edging) {
+        edging = this.edgingRepo.create({
+          userId: String(userId),
+          isEnabled: false,
+          notes: null,
+        });
+        edging = await this.edgingRepo.save(edging);
+      }
+
+      return edging;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async upsertEdgingStatus(
+    userId: number,
+    isEnabled: boolean,
+    notes?: string | null
+  ): Promise<UserEdgingStatus> {
+    try {
+      let edging = await this.edgingRepo.findOne({
+        where: { userId: String(userId) },
+      });
+
+      if (!edging) {
+        edging = this.edgingRepo.create({
+          userId: String(userId),
+          isEnabled,
+          notes: notes ?? null,
+        });
+      } else {
+        edging.isEnabled = isEnabled;
+        if (notes !== undefined) {
+          edging.notes = notes;
+        }
+      }
+
+      return this.edgingRepo.save(edging);
     } catch (error) {
       throw error;
     }

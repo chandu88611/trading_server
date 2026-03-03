@@ -65,6 +65,9 @@ export class UserTradingAccount {
   @Column({ name: "credentials_encrypted", type: "text" })
   credentialsEncrypted!: string;
 
+  @Column({ name: "is_enabled", type: "boolean", default: true })
+  isEnabled!: boolean;
+
   @Column({
     name: "status",
     type: "enum",

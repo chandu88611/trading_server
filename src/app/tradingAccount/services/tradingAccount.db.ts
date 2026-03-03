@@ -14,6 +14,7 @@ import { Market } from "../../../entity/Market";
 
 export class TradingAccountDBService {
   private repo = AppDataSource.getRepository(UserTradingAccount);
+  private brokerRepo = AppDataSource.getRepository(Broker);
   private copyTradingRepo = AppDataSource.getRepository(CopyTradingMaster);
   private copyTradingFollowersRepo = AppDataSource.getRepository(CopyTradingFollowers);
 
@@ -66,50 +67,6 @@ export class TradingAccountDBService {
     }
   }
 
-  async createForUser(
-    userId: number,
-    payload: {
-      broker?: string | null;
-      isMaster?: boolean;
-      executionFlow?: string | null;
-      accountLabel?: string | null;
-      accountMeta?: Record<string, any> | null;
-      credentialsEncrypted?: string | null;
-    }
-  ) {
-    try {
-      // const acc = this.repo.create({
-      //   userId,
-      //   broker: payload.broker ?? null,
-      //   isMaster: payload.isMaster ?? false,
-      //   executionFlow: payload.executionFlow ?? null,
-      //   accountLabel: payload.accountLabel ?? null,
-      //   accountMeta: payload.accountMeta ?? null,
-      //   credentialsEncrypted: payload.credentialsEncrypted ?? null,
-      //   status: "PENDING_VERIFY",
-      // });
-
-
-      const acc = this.repo.create({
-        userId,
-        broker: payload.broker ?? "",
-        isMaster: payload.isMaster ?? false,
-        executionFlow: payload.executionFlow,
-        accountLabel: payload.accountLabel ?? null,
-        accountMeta: payload.accountMeta ?? null,
-        credentialsEncrypted: payload.credentialsEncrypted ?? "",
-        status: TradingAccountStatus.PENDING, // Use the Enum instead of string
-      } as any);
-
-      return await this.repo.save(acc);
-    } catch (error) {
-      throw {
-        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
-        message: "database_error_creating_account",
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
   async alreadyMasterAccountExists(userId: number, marketCategory: string, isMaster: boolean, accountId: string | null, queryRunner: QueryRunner) {
     try {
       const existing = await queryRunner.manager
@@ -125,11 +82,11 @@ export class TradingAccountDBService {
         throw {
           statusCode: HttpStatusCode._CONFLICT,
           message: "you already have a master account for this broker cann't create another one",
-        }
+        };
       }
       return;
     } catch (error) {
-      throw error
+      throw error;
     }
   }
 
@@ -165,6 +122,7 @@ export class TradingAccountDBService {
     userId: number,
     payload: {
       broker?: string | null;
+      accountId?: string | null;
       isMaster?: boolean;
       executionFlow?: string | null;
       accountLabel?: string | null;
@@ -210,6 +168,7 @@ export class TradingAccountDBService {
     id: number,
     payload: Partial<{
       isMaster: boolean;
+      isEnabled: boolean;
       executionFlow: string | null;
       accountLabel: string | null;
       accountMeta: Record<string, any> | null;
@@ -242,6 +201,7 @@ export class TradingAccountDBService {
     id: number,
     payload: Partial<{
       isMaster: boolean;
+      isEnabled: boolean;
       executionFlow: string | null;
       accountLabel: string | null;
       accountMeta: Record<string, any> | null;
@@ -303,6 +263,7 @@ export class TradingAccountDBService {
           brokerId: In(brokerIds),
           isMaster: true,
           status: TradingAccountStatus.VERIFIED,
+          isEnabled: true,
         },
       });
       if (!itemData || itemData.length === 0) {
@@ -332,6 +293,8 @@ export class TradingAccountDBService {
       const userTradingAccounts = await this.repo.find({
         where: {
           id: In(UserTradingAccountIds),
+          status: TradingAccountStatus.VERIFIED,
+          isEnabled: true,
         },
       });
 

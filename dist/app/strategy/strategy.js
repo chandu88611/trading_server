@@ -12,5 +12,11 @@ class StrategyService {
     list(query) {
         return this.db.list(query);
     }
+    setStrategyActive(strategyId, isActive) {
+        return this.db.setStrategyActive(strategyId, isActive);
+    }
+    setUserStrategyInstanceStatus(userId, instanceId, status) {
+        return this.db.setUserStrategyInstanceStatus(userId, instanceId, status);
+    }
 }
 exports.StrategyService = StrategyService;

@@ -13,3 +13,4 @@ export {UserTradingAccount} from "./UserTradingAccount";
 export {Broker} from "./Brokers";
 export {PlanStrategy} from "./PlanStrategy";
 export {Strategy} from "./Strategy";
+export {UserEdgingStatus} from "./UserEdgingStatus";

@@ -149,4 +149,48 @@ export class UserController {
       data: { id: updatedUser.id, allowCopyTrade: updatedUser.allowCopyTrade },
     });
   }
+
+  @ControllerError()
+  async getEdgingStatus(req: AuthRequest, res: Response): Promise<void> {
+    const userId = Number(req.auth!.userId);
+    const status = await this.service.getEdgingStatus(userId);
+
+    res.status(200).json({
+      message: "Edging status fetched",
+      data: {
+        userId: Number(status.userId),
+        isEnabled: status.isEnabled,
+        notes: status.notes ?? null,
+        updatedAt: status.updatedAt,
+      },
+    });
+  }
+
+  @ControllerError()
+  async updateEdgingStatus(req: AuthRequest, res: Response): Promise<void> {
+    const userId = Number(req.auth!.userId);
+    const { isEnabled, notes } = req.body ?? {};
+
+    if (typeof isEnabled !== "boolean") {
+      res.status(400).json({ message: "isEnabled must be a boolean" });
+      return;
+    }
+
+    if (notes !== undefined && notes !== null && typeof notes !== "string") {
+      res.status(400).json({ message: "notes must be a string" });
+      return;
+    }
+
+    const status = await this.service.upsertEdgingStatus(userId, isEnabled, notes);
+
+    res.status(200).json({
+      message: "Edging status updated",
+      data: {
+        userId: Number(status.userId),
+        isEnabled: status.isEnabled,
+        notes: status.notes ?? null,
+        updatedAt: status.updatedAt,
+      },
+    });
+  }
 }

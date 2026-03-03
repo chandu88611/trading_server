@@ -53,6 +53,18 @@ export class UserRouter {
     );
 
     this.userRoutes.get(
+      "/edging-status",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.getEdgingStatus.bind(userController)
+    );
+
+    this.userRoutes.put(
+      "/edging-status",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      userController.updateEdgingStatus.bind(userController)
+    );
+
+    this.userRoutes.get(
       "/me",
       requireAuth([Roles.USER, Roles.ADMIN]),
       userController.getUserDetails.bind(userController)

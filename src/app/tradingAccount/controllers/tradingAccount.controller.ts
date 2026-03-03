@@ -8,12 +8,112 @@ import { marketDataProviderEnum, UserTradeType } from "../../../db/enums";
 export class TradingAccountController {
   private service = new TradingAccountService();
 
+  private asObject(value: unknown): Record<string, any> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    return { ...(value as Record<string, any>) };
+  }
+
+  private firstNonEmptyString(...values: unknown[]): string | undefined {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+    }
+    return undefined;
+  }
+
+  private normalizeIndianMarketFields(payload: CreateTradingAccountPayload) {
+    const brokerCode = this.firstNonEmptyString(payload.broker)?.toUpperCase();
+    const meta = this.asObject(payload.accountMeta);
+    const brokerMetaKey = brokerCode ? brokerCode.toLowerCase() : "";
+    const brokerMeta = brokerMetaKey ? this.asObject(meta[brokerMetaKey]) : {};
+
+    const clientId = this.firstNonEmptyString(
+      payload.clientId,
+      meta.clientId,
+      meta.accountId,
+      meta.dhanClientId,
+      brokerMeta.clientId,
+      brokerMeta.accountId
+    );
+
+    const apiKey = this.firstNonEmptyString(
+      payload.apiKey,
+      payload.vendorCode,
+      meta.apiKey,
+      meta.vendorCode,
+      brokerMeta.apiKey,
+      brokerMeta.vendorCode
+    );
+
+    const appKey = this.firstNonEmptyString(
+      payload.appKey,
+      payload.apiSecret,
+      meta.appKey,
+      meta.apiSecret,
+      brokerMeta.appKey,
+      brokerMeta.apiSecret
+    );
+
+    if (clientId) {
+      meta.clientId = clientId;
+      if (!meta.accountId) meta.accountId = clientId;
+      if (!meta.dhanClientId) meta.dhanClientId = clientId;
+    }
+
+    if (apiKey) {
+      meta.apiKey = apiKey;
+      if (!meta.vendorCode) meta.vendorCode = apiKey;
+    }
+
+    if (appKey) {
+      meta.appKey = appKey;
+      if (!meta.apiSecret) meta.apiSecret = appKey;
+    }
+
+    if (brokerMetaKey) {
+      const nextBrokerMeta = { ...brokerMeta };
+
+      if (clientId) {
+        nextBrokerMeta.clientId = clientId;
+        if (!nextBrokerMeta.accountId) nextBrokerMeta.accountId = clientId;
+      }
+
+      if (apiKey) {
+        nextBrokerMeta.apiKey = apiKey;
+        if (!nextBrokerMeta.vendorCode) nextBrokerMeta.vendorCode = apiKey;
+      }
+
+      if (appKey) {
+        nextBrokerMeta.appKey = appKey;
+        if (!nextBrokerMeta.apiSecret) nextBrokerMeta.apiSecret = appKey;
+      }
+
+      if (Object.keys(nextBrokerMeta).length > 0) {
+        meta[brokerMetaKey] = nextBrokerMeta;
+      }
+    }
+
+    payload.accountMeta = meta;
+
+    if (!payload.accountId && clientId) {
+      payload.accountId = clientId;
+    }
+  }
+
   @ControllerError()
   async listMyAccounts(req: AuthRequest, res: Response) {
     const userId = Number(req.auth!.userId);
-    const planId = Number(req.query.planId);
-    if(planId === undefined || planId === null || isNaN(planId)) {
+    const planIdRaw = req.query.planId as string | undefined;
+    if(planIdRaw === undefined || planIdRaw === null || planIdRaw.trim() === "") {
       res.status(400).json({ message: "missing_plan_id" });
+      return;
+    }
+    const planId = Number(planIdRaw);
+    if (!Number.isFinite(planId) || planId <= 0) {
+      res.status(400).json({ message: "invalid_plan_id" });
       return;
     }
     const accounts = await this.service.listMyAccounts(userId, planId);

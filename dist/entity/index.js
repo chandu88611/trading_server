@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Strategy = exports.PlanStrategy = exports.Broker = exports.UserTradingAccount = exports.TradeSignalStatus = exports.TradeSignal = exports.AlertSnapshot = exports.SubscriptionPlan = exports.UserSubscription = exports.SubscriptionInvoice = exports.SubscriptionPayment = exports.RefreshToken = exports.AuthProvider = exports.User = void 0;
+exports.UserEdgingStatus = exports.Strategy = exports.PlanStrategy = exports.Broker = exports.UserTradingAccount = exports.TradeSignalStatus = exports.TradeSignal = exports.AlertSnapshot = exports.SubscriptionPlan = exports.UserSubscription = exports.SubscriptionInvoice = exports.SubscriptionPayment = exports.RefreshToken = exports.AuthProvider = exports.User = void 0;
 var User_1 = require("./User");
 Object.defineProperty(exports, "User", { enumerable: true, get: function () { return User_1.User; } });
 var AuthProvider_1 = require("./AuthProvider");
@@ -44,3 +44,5 @@ var PlanStrategy_1 = require("./PlanStrategy");
 Object.defineProperty(exports, "PlanStrategy", { enumerable: true, get: function () { return PlanStrategy_1.PlanStrategy; } });
 var Strategy_1 = require("./Strategy");
 Object.defineProperty(exports, "Strategy", { enumerable: true, get: function () { return Strategy_1.Strategy; } });
+var UserEdgingStatus_1 = require("./UserEdgingStatus");
+Object.defineProperty(exports, "UserEdgingStatus", { enumerable: true, get: function () { return UserEdgingStatus_1.UserEdgingStatus; } });

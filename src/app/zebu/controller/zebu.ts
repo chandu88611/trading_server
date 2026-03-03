@@ -50,6 +50,31 @@ export class ZebuController {
 	}
 
 	@ControllerError()
+	async generateToken(req: Request, res: Response) {
+		const userId = this.requireUserId(req);
+		const tradingAccountId = this.requireTradingAccountId(req);
+		const password = String((req.body as any)?.password ?? "");
+		const totp = String((req.body as any)?.totp ?? "").trim();
+
+		if (!password) {
+			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "password_required" });
+		}
+
+		if (!totp) {
+			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "totp_required" });
+		}
+
+		const result = await this.service.generateAndSaveTokenUsingTotp({
+			userId,
+			tradingAccountId,
+			password,
+			totp,
+		});
+
+		return res.json({ message: "zebu_token_generated", data: result });
+	}
+
+	@ControllerError()
 	async placeOrder(req: Request, res: Response) {
 		const userId = this.requireUserId(req);
 		const tradingAccountId = this.requireTradingAccountId(req);

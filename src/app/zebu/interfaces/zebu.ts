@@ -6,6 +6,13 @@ export type ZebuAuthPayload = {
 	apiKey?: string;
 };
 
+export type ZebuGenerateTokenRequest = {
+	userId: number;
+	tradingAccountId: number;
+	password: string;
+	totp: string;
+};
+
 export type ZebuOrderPayload = {
 	symbol: string;
 	exchange?: string;

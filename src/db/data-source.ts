@@ -9,6 +9,7 @@ import {
   SubscriptionPayment,
   SubscriptionPlan,
   UserSubscription,
+  UserEdgingStatus,
 
 } from "../entity";
 import { AlertSnapshot } from "../entity/AlertSnapshots";
@@ -53,6 +54,7 @@ export const AppDataSource = new DataSource({
     SubscriptionPlan,
     TradeSignal,
     UserSubscription,
+    UserEdgingStatus,
     UserBillingDetails,
     UserTradingAccount,
     CopyTradingFollowers,

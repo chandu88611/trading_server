@@ -13,7 +13,9 @@ import { TradingAccountRouter } from "../tradingAccount/routes/tradingAccount.ro
 import { Mt5ListenerRouter } from "../mt5Listener/mt5Listener.routes";
 import ctraderRouter from "../ctrader/ctraderRoutes";
 import { ZebuRouter } from "../zebu/routes/zebu";
+import { DhanRouter } from "../dhan/routes/dhan";
 import { TradeRouter } from "../trade/routes/trade.route";
+import { StrategyRouter } from "../strategy/routes/strategy.route";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -45,7 +47,9 @@ export class ApplicationRouter {
     this.applicationRoutes.use("/signal", new Mt5ListenerRouter().getRouter());
     this.applicationRoutes.use("/ctrader", ctraderRouter);
     this.applicationRoutes.use("/zebu", new ZebuRouter().getRouter());
+    this.applicationRoutes.use("/dhan", new DhanRouter().getRouter());
     this.applicationRoutes.use("/trade",new TradeRouter().getRouter());
+    this.applicationRoutes.use("/strategy", new StrategyRouter().getRouter());
 
   }
 

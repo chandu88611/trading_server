@@ -277,7 +277,13 @@ class BillingDBService {
         const userSubRepo = trx.getRepository(entity_1.UserSubscription);
         const userId = Number(invoice.userId);
         const planId = Number(invoice.planId);
-        const existing = await userSubRepo.findOne({ where: { userId } });
+        const existing = await userSubRepo.findOne({
+            where: {
+                userId,
+                planId,
+                statusV2: "active",
+            },
+        });
         const startDate = new Date(invoice.billingPeriodStart);
         const endDate = new Date(invoice.billingPeriodEnd);
         if (existing) {

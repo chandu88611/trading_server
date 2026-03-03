@@ -17,52 +17,66 @@ let Strategy = class Strategy {
 exports.Strategy = Strategy;
 __decorate([
     (0, typeorm_1.PrimaryGeneratedColumn)({ type: "bigint" }),
-    __metadata("design:type", String)
+    __metadata("design:type", Number)
 ], Strategy.prototype, "id", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
-    (0, typeorm_1.Column)({ type: "varchar", length: 120 }),
+    (0, typeorm_1.Column)({ name: "strategy_code", type: "text", unique: true }),
+    __metadata("design:type", String)
+], Strategy.prototype, "strategyCode", void 0);
+__decorate([
+    (0, typeorm_1.Index)(),
+    (0, typeorm_1.Column)({ name: "name", type: "text" }),
     __metadata("design:type", String)
 ], Strategy.prototype, "name", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: "text", nullable: true }),
+    (0, typeorm_1.Column)({ name: "description", type: "text", nullable: true }),
     __metadata("design:type", Object)
 ], Strategy.prototype, "description", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
-    (0, typeorm_1.Column)({ type: "varchar", length: 60 }),
+    (0, typeorm_1.Column)({ name: "category", type: "varchar" }),
     __metadata("design:type", String)
 ], Strategy.prototype, "category", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: "varchar", length: 16, default: "Medium" }),
-    __metadata("design:type", String)
-], Strategy.prototype, "risk", void 0);
+    (0, typeorm_1.Column)({ name: "version", type: "int", default: 1 }),
+    __metadata("design:type", Number)
+], Strategy.prototype, "version", void 0);
 __decorate([
-    (0, typeorm_1.Column)("text", { array: true, default: () => "ARRAY[]::text[]" }),
-    __metadata("design:type", Array)
-], Strategy.prototype, "marketCodes", void 0);
+    (0, typeorm_1.Column)({
+        name: "default_params",
+        type: "jsonb",
+        nullable: false,
+        default: () => "'{}'::jsonb",
+    }),
+    __metadata("design:type", Object)
+], Strategy.prototype, "defaultParams", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: "numeric", precision: 8, scale: 2, default: 0 }),
-    __metadata("design:type", String)
-], Strategy.prototype, "avgMonthlyReturnPct", void 0);
+    (0, typeorm_1.Column)({ name: "risk_profile", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], Strategy.prototype, "riskProfile", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: "numeric", precision: 6, scale: 2, default: 0 }),
-    __metadata("design:type", String)
-], Strategy.prototype, "winRatePct", void 0);
+    (0, typeorm_1.Column)({ name: "capital_requirement", type: "numeric", precision: 12, scale: 2, nullable: true }),
+    __metadata("design:type", Object)
+], Strategy.prototype, "capitalRequirement", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: "numeric", precision: 6, scale: 2, default: 0 }),
-    __metadata("design:type", String)
-], Strategy.prototype, "maxDrawdownPct", void 0);
-__decorate([
-    (0, typeorm_1.Column)({ type: "boolean", default: true }),
+    (0, typeorm_1.Column)({ name: "is_active", type: "boolean", default: true }),
     __metadata("design:type", Boolean)
 ], Strategy.prototype, "isActive", void 0);
 __decorate([
-    (0, typeorm_1.CreateDateColumn)(),
+    (0, typeorm_1.Column)({ name: "is_deprecated", type: "boolean", default: false }),
+    __metadata("design:type", Boolean)
+], Strategy.prototype, "isDeprecated", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "is_copyable", type: "boolean", default: true }),
+    __metadata("design:type", Boolean)
+], Strategy.prototype, "isCopyable", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ name: "created_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], Strategy.prototype, "createdAt", void 0);
 __decorate([
-    (0, typeorm_1.UpdateDateColumn)(),
+    (0, typeorm_1.UpdateDateColumn)({ name: "updated_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], Strategy.prototype, "updatedAt", void 0);
 __decorate([

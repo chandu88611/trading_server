@@ -352,7 +352,13 @@ export class BillingDBService {
     const userId = Number(invoice.userId);
     const planId = Number(invoice.planId);
 
-    const existing = await userSubRepo.findOne({ where: { userId } as any });
+    const existing = await userSubRepo.findOne({
+      where: {
+        userId,
+        planId,
+        statusV2: "active",
+      } as any,
+    });
 
     const startDate = new Date(invoice.billingPeriodStart);
     const endDate = new Date(invoice.billingPeriodEnd);

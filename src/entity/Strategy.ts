@@ -9,50 +9,56 @@ import {
 } from "typeorm";
 import { PlanStrategy } from "./PlanStrategy";
 
-export type StrategyRisk = "Low" | "Medium" | "High";
-
 @Entity({ name: "strategies" })
 export class Strategy {
-  // BIGINT IDs in postgres often come back as string in TS
   @PrimaryGeneratedColumn({ type: "bigint" })
-  id!: string;
+  id!: number;
 
   @Index()
-  @Column({ type: "varchar", length: 120 })
+  @Column({ name: "strategy_code", type: "text", unique: true })
+  strategyCode!: string;
+
+  @Index()
+  @Column({ name: "name", type: "text" })
   name!: string;
 
-  @Column({ type: "text", nullable: true })
+  @Column({ name: "description", type: "text", nullable: true })
   description!: string | null;
 
   @Index()
-  @Column({ type: "varchar", length: 60 })
+  @Column({ name: "category", type: "varchar" })
   category!: string;
 
-  @Column({ type: "varchar", length: 16, default: "Medium" })
-  risk!: StrategyRisk;
+  @Column({ name: "version", type: "int", default: 1 })
+  version!: number;
 
-  // easiest: store market codes as text[]
-  // examples: ["FOREX"], ["CRYPTO"], ["INDIAN"], ["FOREX","CRYPTO"]
-  @Column("text", { array: true, default: () => "ARRAY[]::text[]" })
-  marketCodes!: string[];
+  @Column({
+    name: "default_params",
+    type: "jsonb",
+    nullable: false,
+    default: () => "'{}'::jsonb",
+  })
+  defaultParams!: Record<string, any>;
 
-  // numeric -> returned as string; UI converts to number
-  @Column({ type: "numeric", precision: 8, scale: 2, default: 0 })
-  avgMonthlyReturnPct!: string;
+  @Column({ name: "risk_profile", type: "text", nullable: true })
+  riskProfile!: string | null;
 
-  @Column({ type: "numeric", precision: 6, scale: 2, default: 0 })
-  winRatePct!: string;
+  @Column({ name: "capital_requirement", type: "numeric", precision: 12, scale: 2, nullable: true })
+  capitalRequirement!: string | null;
 
-  @Column({ type: "numeric", precision: 6, scale: 2, default: 0 })
-  maxDrawdownPct!: string;
-
-  @Column({ type: "boolean", default: true })
+  @Column({ name: "is_active", type: "boolean", default: true })
   isActive!: boolean;
 
-  @CreateDateColumn()
+  @Column({ name: "is_deprecated", type: "boolean", default: false })
+  isDeprecated!: boolean;
+
+  @Column({ name: "is_copyable", type: "boolean", default: true })
+  isCopyable!: boolean;
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
 
   @OneToMany(() => PlanStrategy, (ps) => ps.strategy)

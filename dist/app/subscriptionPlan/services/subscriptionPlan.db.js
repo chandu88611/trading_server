@@ -112,7 +112,7 @@ class SubscriptionPlanDBService {
                 limits: true,
                 features: true,
                 bundleItems: true,
-                planStrategies: true,
+                planStrategies: { strategy: true },
             },
         });
     }
@@ -246,6 +246,7 @@ class SubscriptionPlanDBService {
             .leftJoinAndSelect("p.features", "features")
             .leftJoinAndSelect("p.bundleItems", "bundleItems")
             .leftJoinAndSelect("p.planStrategies", "planStrategies")
+            .leftJoinAndSelect("planStrategies.strategy", "strategy")
             .orderBy("p.createdAt", "DESC")
             .skip(initialOffset)
             .take(chunkSize);

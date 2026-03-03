@@ -18,6 +18,7 @@ const Market_1 = require("../../../entity/Market");
 class TradingAccountDBService {
     constructor() {
         this.repo = data_source_1.default.getRepository(UserTradingAccount_1.UserTradingAccount);
+        this.brokerRepo = data_source_1.default.getRepository(entity_1.Broker);
         this.copyTradingRepo = data_source_1.default.getRepository(CopyTradingMaster_1.CopyTradingMaster);
         this.copyTradingFollowersRepo = data_source_1.default.getRepository(CopyTradingFollow_1.CopyTradingFollowers);
     }
@@ -66,38 +67,6 @@ class TradingAccountDBService {
             throw {
                 statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
                 message: "database_error_finding_account",
-                error: error instanceof Error ? error.message : String(error),
-            };
-        }
-    }
-    async createForUser(userId, payload) {
-        try {
-            // const acc = this.repo.create({
-            //   userId,
-            //   broker: payload.broker ?? null,
-            //   isMaster: payload.isMaster ?? false,
-            //   executionFlow: payload.executionFlow ?? null,
-            //   accountLabel: payload.accountLabel ?? null,
-            //   accountMeta: payload.accountMeta ?? null,
-            //   credentialsEncrypted: payload.credentialsEncrypted ?? null,
-            //   status: "PENDING_VERIFY",
-            // });
-            const acc = this.repo.create({
-                userId,
-                broker: payload.broker ?? "",
-                isMaster: payload.isMaster ?? false,
-                executionFlow: payload.executionFlow,
-                accountLabel: payload.accountLabel ?? null,
-                accountMeta: payload.accountMeta ?? null,
-                credentialsEncrypted: payload.credentialsEncrypted ?? "",
-                status: subscriberPlan_enum_1.TradingAccountStatus.PENDING, // Use the Enum instead of string
-            });
-            return await this.repo.save(acc);
-        }
-        catch (error) {
-            throw {
-                statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
-                message: "database_error_creating_account",
                 error: error instanceof Error ? error.message : String(error),
             };
         }
@@ -262,6 +231,7 @@ class TradingAccountDBService {
                     brokerId: (0, typeorm_1.In)(brokerIds),
                     isMaster: true,
                     status: subscriberPlan_enum_1.TradingAccountStatus.VERIFIED,
+                    isEnabled: true,
                 },
             });
             if (!itemData || itemData.length === 0) {
@@ -289,6 +259,8 @@ class TradingAccountDBService {
             const userTradingAccounts = await this.repo.find({
                 where: {
                     id: (0, typeorm_1.In)(UserTradingAccountIds),
+                    status: subscriberPlan_enum_1.TradingAccountStatus.VERIFIED,
+                    isEnabled: true,
                 },
             });
             let ids = userTradingAccounts.map((account) => ({ userId: account.userId, id: account.id }));

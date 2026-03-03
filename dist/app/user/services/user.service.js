@@ -157,5 +157,21 @@ class UserService {
             throw error;
         }
     }
+    async getEdgingStatus(userId) {
+        try {
+            return this.db.getEdgingStatus(userId);
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async upsertEdgingStatus(userId, isEnabled, notes) {
+        try {
+            return this.db.upsertEdgingStatus(userId, isEnabled, notes);
+        }
+        catch (error) {
+            throw error;
+        }
+    }
 }
 exports.UserService = UserService;

@@ -24,6 +24,28 @@ class StrategyController {
         const data = await this.service.list({ isActive: true });
         res.status(200).json({ message: "Fetched strategies", data });
     }
+    async enableStrategy(req, res) {
+        const strategyId = Number(req.params.strategyId);
+        const data = await this.service.setStrategyActive(strategyId, true);
+        res.status(200).json({ message: "strategy_enabled", data });
+    }
+    async disableStrategy(req, res) {
+        const strategyId = Number(req.params.strategyId);
+        const data = await this.service.setStrategyActive(strategyId, false);
+        res.status(200).json({ message: "strategy_disabled", data });
+    }
+    async enableUserStrategyInstance(req, res) {
+        const userId = Number(req.auth.userId);
+        const instanceId = Number(req.params.instanceId);
+        const data = await this.service.setUserStrategyInstanceStatus(userId, instanceId, "active");
+        res.status(200).json({ message: "user_strategy_enabled", data });
+    }
+    async disableUserStrategyInstance(req, res) {
+        const userId = Number(req.auth.userId);
+        const instanceId = Number(req.params.instanceId);
+        const data = await this.service.setUserStrategyInstanceStatus(userId, instanceId, "paused");
+        res.status(200).json({ message: "user_strategy_disabled", data });
+    }
 }
 exports.StrategyController = StrategyController;
 __decorate([
@@ -38,3 +60,27 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], StrategyController.prototype, "listActive", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], StrategyController.prototype, "enableStrategy", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], StrategyController.prototype, "disableStrategy", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], StrategyController.prototype, "enableUserStrategyInstance", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], StrategyController.prototype, "disableUserStrategyInstance", null);

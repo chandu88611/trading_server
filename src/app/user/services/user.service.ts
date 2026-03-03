@@ -12,6 +12,7 @@ import { AuthProvider } from "../../../entity/AuthProvider";
 import { generateEmailVerificationToken } from "../utils/email-verification.util";
 import { sendUserVerificationEmail } from "./email-verification.service";
 import { UserBillingDetails } from "../../../entity/UserBillingDetails";
+import { UserEdgingStatus } from "../../../entity/UserEdgingStatus";
 
 const SALT_ROUNDS = 12;
 const REFRESH_TTL_MS = 1000 * 60 * 60 * 24 * 15; // 15 days
@@ -192,6 +193,26 @@ export class UserService {
   ): Promise<User> {
     try {
       return this.db.updateCopyTradeStatus(userId, allowCopyTrade);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getEdgingStatus(userId: number): Promise<UserEdgingStatus> {
+    try {
+      return this.db.getEdgingStatus(userId);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async upsertEdgingStatus(
+    userId: number,
+    isEnabled: boolean,
+    notes?: string | null
+  ): Promise<UserEdgingStatus> {
+    try {
+      return this.db.upsertEdgingStatus(userId, isEnabled, notes);
     } catch (error) {
       throw error;
     }

@@ -52,6 +52,25 @@ class ZebuController {
         });
         return res.json({ message: "zebu_token_saved", data: result });
     }
+    async generateToken(req, res) {
+        const userId = this.requireUserId(req);
+        const tradingAccountId = this.requireTradingAccountId(req);
+        const password = String(req.body?.password ?? "");
+        const totp = String(req.body?.totp ?? "").trim();
+        if (!password) {
+            return res.status(constants_1.HttpStatusCode._BAD_REQUEST).json({ message: "password_required" });
+        }
+        if (!totp) {
+            return res.status(constants_1.HttpStatusCode._BAD_REQUEST).json({ message: "totp_required" });
+        }
+        const result = await this.service.generateAndSaveTokenUsingTotp({
+            userId,
+            tradingAccountId,
+            password,
+            totp,
+        });
+        return res.json({ message: "zebu_token_generated", data: result });
+    }
     async placeOrder(req, res) {
         const userId = this.requireUserId(req);
         const tradingAccountId = this.requireTradingAccountId(req);
@@ -127,6 +146,12 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], ZebuController.prototype, "saveToken", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], ZebuController.prototype, "generateToken", null);
 __decorate([
     (0, error_handler_1.ControllerError)(),
     __metadata("design:type", Function),

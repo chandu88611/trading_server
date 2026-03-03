@@ -23,7 +23,12 @@ export class UserSubscriptionService {
 
     const existing = await this.db.getActiveSubscription(userId,plan);
 
-    if (existing?.length !== 0) throw new Error("User already has an active subscription");
+    const alreadySubscribedToSamePlan =
+      (existing ?? []).some((sub: any) => Number(sub.planId) === Number(planId));
+
+    if (alreadySubscribedToSamePlan) {
+      throw new Error("User already has an active subscription for this plan");
+    }
     // NEW DESIGN: interval comes from pricing.interval
     const interval = (plan as any).pricing?.interval ?? "monthly";
 

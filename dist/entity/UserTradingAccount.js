@@ -76,6 +76,10 @@ __decorate([
     __metadata("design:type", String)
 ], UserTradingAccount.prototype, "credentialsEncrypted", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "is_enabled", type: "boolean", default: true }),
+    __metadata("design:type", Boolean)
+], UserTradingAccount.prototype, "isEnabled", void 0);
+__decorate([
     (0, typeorm_1.Column)({
         name: "status",
         type: "enum",

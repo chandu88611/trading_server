@@ -47,6 +47,7 @@ exports.AppDataSource = new typeorm_1.DataSource({
         entity_1.SubscriptionPlan,
         TradeSignals_1.TradeSignal,
         entity_1.UserSubscription,
+        entity_1.UserEdgingStatus,
         UserBillingDetails_1.UserBillingDetails,
         UserTradingAccount_1.UserTradingAccount,
         CopyTradingFollow_1.CopyTradingFollowers,

@@ -11,12 +11,14 @@ const AuthProvider_1 = require("../../../entity/AuthProvider");
 const RefreshToken_1 = require("../../../entity/RefreshToken");
 const constants_1 = require("../../../types/constants");
 const UserBillingDetails_1 = require("../../../entity/UserBillingDetails");
+const UserEdgingStatus_1 = require("../../../entity/UserEdgingStatus");
 class UserDBService {
     constructor() {
         this.userRepo = data_source_1.default.getRepository(User_1.User);
         this.authRepo = data_source_1.default.getRepository(AuthProvider_1.AuthProvider);
         this.tokenRepo = data_source_1.default.getRepository(RefreshToken_1.RefreshToken);
         this.billingRepo = data_source_1.default.getRepository(UserBillingDetails_1.UserBillingDetails);
+        this.edgingRepo = data_source_1.default.getRepository(UserEdgingStatus_1.UserEdgingStatus);
     }
     async findByEmail(email) {
         return this.userRepo.findOne({ where: { email } });
@@ -195,6 +197,49 @@ class UserDBService {
             }
             user.allowCopyTrade = allowCopyTrade;
             return this.userRepo.save(user);
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async getEdgingStatus(userId) {
+        try {
+            let edging = await this.edgingRepo.findOne({
+                where: { userId: String(userId) },
+            });
+            if (!edging) {
+                edging = this.edgingRepo.create({
+                    userId: String(userId),
+                    isEnabled: false,
+                    notes: null,
+                });
+                edging = await this.edgingRepo.save(edging);
+            }
+            return edging;
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async upsertEdgingStatus(userId, isEnabled, notes) {
+        try {
+            let edging = await this.edgingRepo.findOne({
+                where: { userId: String(userId) },
+            });
+            if (!edging) {
+                edging = this.edgingRepo.create({
+                    userId: String(userId),
+                    isEnabled,
+                    notes: notes ?? null,
+                });
+            }
+            else {
+                edging.isEnabled = isEnabled;
+                if (notes !== undefined) {
+                    edging.notes = notes;
+                }
+            }
+            return this.edgingRepo.save(edging);
         }
         catch (error) {
             throw error;
