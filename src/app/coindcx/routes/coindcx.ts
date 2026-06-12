@@ -1,0 +1,33 @@
+import { Router } from "express";
+import { CoinDCXController } from "../controller/coindcx";
+import { requireAuth, Roles } from "../../../middleware/auth";
+
+export class CoinDCXRouter {
+	private router: Router;
+
+	constructor() {
+		this.router = Router();
+		this.initRoutes();
+	}
+
+	private initRoutes() {
+		const controller = new CoinDCXController();
+
+		this.router.get("/public/ticker", controller.publicTicker.bind(controller));
+		this.router.get("/public/orderbook", controller.publicOrderbook.bind(controller));
+
+		this.router.post("/orders/place", requireAuth([Roles.USER, Roles.ADMIN]), controller.placeOrder.bind(controller));
+		this.router.post("/orders/modify", requireAuth([Roles.USER, Roles.ADMIN]), controller.modifyOrder.bind(controller));
+		this.router.post("/orders/cancel", requireAuth([Roles.USER, Roles.ADMIN]), controller.cancelOrder.bind(controller));
+
+		this.router.post("/orders", requireAuth([Roles.USER, Roles.ADMIN]), controller.getOrders.bind(controller));
+		this.router.post("/positions", requireAuth([Roles.USER, Roles.ADMIN]), controller.getPositions.bind(controller));
+		this.router.post("/holdings", requireAuth([Roles.USER, Roles.ADMIN]), controller.getHoldings.bind(controller));
+
+		this.router.post("/execute-pending", requireAuth([Roles.USER, Roles.ADMIN]), controller.executePending.bind(controller));
+	}
+
+	getRouter() {
+		return this.router;
+	}
+}

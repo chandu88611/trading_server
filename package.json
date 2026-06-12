@@ -4,11 +4,20 @@
   "private": true,
   "scripts": {
     "build": "tsc -p .",
+    "crm:backfill": "ts-node scripts/backfill-crm-sync.ts",
+    "ctrader:requeue": "ts-node scripts/requeue-ctrader-transient-failures.ts",
+    "docker:server0:build": "docker compose build server-0",
+    "docker:server0:up": "docker compose up -d --build server-0",
+    "docker:server0:down": "docker compose down",
+    "docker:server0:logs": "docker compose logs -f server-0",
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "lint": "eslint . --ext .ts",
-    "test": "node --test -r ts-node/register src/tests/**/*.test.ts",
-    "test:brokers": "node --test -r ts-node/register src/tests/brokers/**/*.test.ts",
+    "test": "node --test -r ts-node/register/transpile-only src/tests/**/*.test.ts",
+    "test:qa": "node --test -r ts-node/register/transpile-only src/tests/**/*.test.ts",
+    "test:support": "node --test -r ts-node/register/transpile-only src/tests/support/**/*.test.ts",
+    "test:plans": "node --test -r ts-node/register/transpile-only src/tests/subscriptionPlan/**/*.test.ts",
+    "test:brokers": "node --test -r ts-node/register/transpile-only src/tests/brokers/**/*.test.ts",
     "start:job-processor": "node dist/src/app/broker/brokerExecution/worker/jobProcessor.js"
   },
   "dependencies": {

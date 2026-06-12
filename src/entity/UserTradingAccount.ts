@@ -14,7 +14,6 @@ import {
 import { User } from "./User";
 import { UserSubscription } from "./UserSubscription";
 import {
-  ExecutionFlow,
   TradingAccountStatus,
 } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
 import { Broker } from "./Brokers";
@@ -90,6 +89,9 @@ export class UserTradingAccount {
 
   @Column({name:"refresh_token", type: "text"})
   refreshToken!: string;
+
+  @Column({ name: "mt5_poll_key", type: "text", nullable: true })
+  mt5PollKey!: string | null;
 
   @OneToMany(() => TradeSignal, (tradeSignal) => tradeSignal.tradingAccount)
   tradeSignals!: TradeSignal[];

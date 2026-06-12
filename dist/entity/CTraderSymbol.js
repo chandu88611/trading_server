@@ -39,6 +39,30 @@ __decorate([
     __metadata("design:type", Number)
 ], CTraderSymbol.prototype, "symbolId", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "lot_size", type: "bigint", nullable: true }),
+    __metadata("design:type", Object)
+], CTraderSymbol.prototype, "lotSize", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "digits", type: "integer", nullable: true }),
+    __metadata("design:type", Object)
+], CTraderSymbol.prototype, "digits", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "pip_position", type: "integer", nullable: true }),
+    __metadata("design:type", Object)
+], CTraderSymbol.prototype, "pipPosition", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "sl_distance", type: "integer", nullable: true }),
+    __metadata("design:type", Object)
+], CTraderSymbol.prototype, "slDistance", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "tp_distance", type: "integer", nullable: true }),
+    __metadata("design:type", Object)
+], CTraderSymbol.prototype, "tpDistance", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "distance_set_in", type: "varchar", length: 40, nullable: true }),
+    __metadata("design:type", Object)
+], CTraderSymbol.prototype, "distanceSetIn", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)({ name: "created_at" }),
     __metadata("design:type", Date)
 ], CTraderSymbol.prototype, "createdAt", void 0);

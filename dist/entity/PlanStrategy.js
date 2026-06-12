@@ -47,5 +47,6 @@ __decorate([
 ], PlanStrategy.prototype, "createdAt", void 0);
 exports.PlanStrategy = PlanStrategy = __decorate([
     (0, typeorm_1.Entity)({ name: "plan_strategies" }),
-    (0, typeorm_1.Index)(["planId", "strategyId"], { unique: true })
+    (0, typeorm_1.Index)(["planId", "strategyId"], { unique: true }),
+    (0, typeorm_1.Index)(["planId"], { unique: true })
 ], PlanStrategy);

@@ -13,6 +13,7 @@ import { Strategy } from "./Strategy";
 
 @Entity({ name: "plan_strategies" })
 @Index(["planId", "strategyId"], { unique: true })
+@Index(["planId"], { unique: true })
 export class PlanStrategy {
   @PrimaryGeneratedColumn({ type: "bigint" })
   id!: number; // BIGINT

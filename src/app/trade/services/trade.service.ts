@@ -1,11 +1,7 @@
 // src/app/trade/services/trade.service.ts
 import AppDataSource from "../../../db/data-source";
-import { TradeGuardService } from "./tradeGuard.service";
-import { TradeDBService } from "./trade.db";
-import { CtraderGatewayClient } from "../../../infra/ctraderGateway.client";
+import { AdminStrategyTradeListQuery, TradeDBService } from "./trade.db";
 import { CopyTradeSideEnum } from "../../../db/enums";
-import { AssetClassifier } from "../../../types/trade-identify";
-import { HttpStatusCode } from "../../../types/constants";
 
 export type CreateTradePayload = {
   tradingAccountId: number;
@@ -42,6 +38,33 @@ export class TradeService {
     } catch (error) {
       await queryRunner.rollbackTransaction();
        throw error
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async listAdminStrategyTrades(query: AdminStrategyTradeListQuery) {
+    return this.db.listAdminStrategyTrades(query);
+  }
+
+  async getAdminStrategyTrade(adminStrategyTradeId: number) {
+    return this.db.getAdminStrategyTrade(adminStrategyTradeId);
+  }
+
+  async closeAdminStrategyTrade(adminStrategyTradeId: number) {
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const result = await this.db.closeAdminStrategyTrade(
+        adminStrategyTradeId,
+        queryRunner
+      );
+      await queryRunner.commitTransaction();
+      return result;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
     } finally {
       await queryRunner.release();
     }

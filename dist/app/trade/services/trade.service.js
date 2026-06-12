@@ -37,5 +37,28 @@ class TradeService {
             await queryRunner.release();
         }
     }
+    async listAdminStrategyTrades(query) {
+        return this.db.listAdminStrategyTrades(query);
+    }
+    async getAdminStrategyTrade(adminStrategyTradeId) {
+        return this.db.getAdminStrategyTrade(adminStrategyTradeId);
+    }
+    async closeAdminStrategyTrade(adminStrategyTradeId) {
+        const queryRunner = data_source_1.default.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+        try {
+            const result = await this.db.closeAdminStrategyTrade(adminStrategyTradeId, queryRunner);
+            await queryRunner.commitTransaction();
+            return result;
+        }
+        catch (error) {
+            await queryRunner.rollbackTransaction();
+            throw error;
+        }
+        finally {
+            await queryRunner.release();
+        }
+    }
 }
 exports.TradeService = TradeService;

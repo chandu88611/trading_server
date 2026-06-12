@@ -5,7 +5,9 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  OneToOne,
 } from "typeorm";
+import { User } from "./User";
 
 @Entity({ name: "user_edging_status" })
 export class UserEdgingStatus {
@@ -15,6 +17,9 @@ export class UserEdgingStatus {
   @Index({ unique: true })
   @Column({ name: "user_id", type: "bigint" })
   userId!: string;
+
+  @OneToOne(() => User, (user) => user.userEdgingStatus)
+  user!: User;
 
   @Column({ name: "is_enabled", type: "boolean", default: false })
   isEnabled!: boolean;

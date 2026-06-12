@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppDataSource = void 0;
+exports.ensureAppDataSourceInitialized = ensureAppDataSourceInitialized;
 require("reflect-metadata");
 const typeorm_1 = require("typeorm");
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -26,6 +27,7 @@ const TradeSignalsStatus_1 = require("../entity/TradeSignalsStatus");
 const Brokers_1 = require("../entity/Brokers");
 const CTraderSession_1 = require("../entity/CTraderSession");
 const CTraderSymbol_1 = require("../entity/CTraderSymbol");
+const UserStrategyInstance_1 = require("../entity/UserStrategyInstance");
 dotenv_1.default.config();
 const port = process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5449;
 exports.AppDataSource = new typeorm_1.DataSource({
@@ -44,10 +46,23 @@ exports.AppDataSource = new typeorm_1.DataSource({
         AlertSnapshots_1.AlertSnapshot,
         entity_1.SubscriptionInvoice,
         entity_1.SubscriptionPayment,
+        entity_1.RazorpayOrder,
         entity_1.SubscriptionPlan,
+        entity_1.PlanAdminWebhookToken,
         TradeSignals_1.TradeSignal,
         entity_1.UserSubscription,
         entity_1.UserEdgingStatus,
+        entity_1.UserRiskLimits,
+        entity_1.ReferralRewardCredit,
+        entity_1.WithdrawalRequest,
+        entity_1.WithdrawalSetting,
+        entity_1.AdminStrategyTradeScheduleSetting,
+        entity_1.AdminStrategyTrade,
+        entity_1.CrmSyncOutbox,
+        entity_1.SupportTicket,
+        entity_1.SupportTicketMessage,
+        entity_1.CTraderTrailingTakeProfitMonitor,
+        entity_1.SubscriberTradeAlert,
         UserBillingDetails_1.UserBillingDetails,
         UserTradingAccount_1.UserTradingAccount,
         CopyTradingFollow_1.CopyTradingFollowers,
@@ -61,11 +76,27 @@ exports.AppDataSource = new typeorm_1.DataSource({
         PlanFeature_1.PlanFeature,
         PlanBundleItem_1.PlanBundleItem,
         PlanStrategy_1.PlanStrategy,
+        UserStrategyInstance_1.UserStrategyInstance,
         Brokers_1.Broker,
         CTraderSession_1.CTraderSession,
         CTraderSymbol_1.CTraderSymbol,
+        entity_1.Mt5Symbol,
+        entity_1.ZebuProtectionMonitor,
     ],
     migrations: [],
     subscribers: [],
 });
+let initializePromise = null;
+async function ensureAppDataSourceInitialized() {
+    if (exports.AppDataSource.isInitialized) {
+        return exports.AppDataSource;
+    }
+    if (!initializePromise) {
+        initializePromise = exports.AppDataSource.initialize().catch((error) => {
+            initializePromise = null;
+            throw error;
+        });
+    }
+    return initializePromise;
+}
 exports.default = exports.AppDataSource;

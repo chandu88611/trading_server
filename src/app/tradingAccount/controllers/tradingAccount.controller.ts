@@ -3,7 +3,6 @@ import { Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
 import { AuthRequest } from "../../../middleware/auth";
 import { TradingAccountService, CreateTradingAccountPayload, UpdateTradingAccountPayload } from "../services/tradingAccount.service";
-import { marketDataProviderEnum, UserTradeType } from "../../../db/enums";
 
 export class TradingAccountController {
   private service = new TradingAccountService();
@@ -103,6 +102,79 @@ export class TradingAccountController {
     }
   }
 
+  private normalizeCoinDCXFields(payload: CreateTradingAccountPayload) {
+    const brokerCode = this.firstNonEmptyString(payload.broker)?.toUpperCase();
+    if (brokerCode !== "COINDCX") return;
+
+    const meta = this.asObject(payload.accountMeta);
+    const coindcxMeta = this.asObject(meta.coindcx);
+
+    const apiKey = this.firstNonEmptyString(payload.apiKey, meta.apiKey, coindcxMeta.apiKey);
+    const apiSecret = this.firstNonEmptyString(payload.apiSecret, payload.appKey, meta.apiSecret, coindcxMeta.apiSecret);
+    const baseUrl = this.firstNonEmptyString(
+      meta.baseUrl,
+      coindcxMeta.baseUrl,
+      process.env.COINDCX_BASE_URL,
+      "https://api.coindcx.com"
+    );
+
+    meta.coindcx = {
+      ...coindcxMeta,
+      ...(apiKey ? { apiKey } : {}),
+      ...(apiSecret ? { apiSecret } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+
+    payload.accountMeta = meta;
+
+    if (!payload.accountId) {
+      const accountId = this.firstNonEmptyString(meta.accountId, coindcxMeta.accountId);
+      if (accountId) payload.accountId = accountId;
+    }
+  }
+
+  /** GET /trading-accounts/me — all accounts for the current user, no planId required */
+  @ControllerError()
+  async listMyAccountsMe(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const accounts = await this.service.listAllMyAccounts(userId);
+
+    // Shape each account into the flat payload the frontend expects
+    const rows = accounts.map((a: any) => ({
+      id: a.id,
+      market: a.broker?.marketCategory ?? null,
+      broker: a.broker?.code ?? null,
+      forexPlatform: a.broker?.platform ?? null,
+      label: a.accountLabel ?? null,
+      accountLabel: a.accountLabel ?? null,
+      externalAccountId: a.accountId ?? null,
+      status: a.status ?? "pending",
+      lastVerifiedAt: a.lastVerifiedAt ?? null,
+      last_verified_at: a.lastVerifiedAt ?? null,
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+    }));
+
+    res.json({ data: rows });
+  }
+
+  /** GET /trading-accounts/:id/poll-key — returns the MT5 poll key for a specific account */
+  @ControllerError()
+  async getMt5PollKey(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const accountId = Number(req.params.id);
+    if (!accountId) { res.status(400).json({ message: "missing_account_id" }); return; }
+
+    const account = await this.service.getMyAccountById(userId, accountId);
+    const pollKey = (account as any).mt5PollKey ?? null;
+    if (!pollKey) {
+      res.status(404).json({ message: "poll_key_not_set" });
+      return;
+    }
+    res.json({ data: { pollKey, accountId: (account as any).accountId } });
+  }
+
   @ControllerError()
   async listMyAccounts(req: AuthRequest, res: Response) {
     const userId = Number(req.auth!.userId);
@@ -143,6 +215,9 @@ export class TradingAccountController {
       res.status(400).json({ message: "missing_required_fields" });
       return;
     }
+
+    this.normalizeIndianMarketFields(payload);
+    this.normalizeCoinDCXFields(payload);
 
     const account = await this.service.createMyAccount(userId, payload);
     res.status(201).json({ account });
@@ -208,7 +283,7 @@ export class TradingAccountController {
   async getCopyTradingRequests(req: AuthRequest, res: Response) {
     console.log("Received request to get copy trading requests", { userId: req.auth!.userId });
     const userId = Number(req.auth!.userId);
-    let {count, start, searchParams} = req.query ?? {};
+    let {count, start} = req.query ?? {};
     if(count === undefined) {
       count = '10';
     }
@@ -241,7 +316,6 @@ export class TradingAccountController {
 
   @ControllerError()
   async allowCopyTrading(req: AuthRequest, res: Response) {
-    const userId = Number(req.auth!.userId);
     const payload: { requestId: number, approve: boolean } = req.body ?? {};
 
     if (!payload.requestId || payload.approve === undefined) {

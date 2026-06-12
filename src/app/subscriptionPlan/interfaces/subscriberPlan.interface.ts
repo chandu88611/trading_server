@@ -37,8 +37,8 @@ export interface ICreateSubscriptionPlan {
   // plan_features (optional)
   features?: FeatureKV; // { "WEBHOOK_EXECUTION": "ENABLED" }
 
-  // plan_strategies (optional)
-  strategyIds?: number[]; // map to strategies table
+  // plan_strategies (optional, one per plan)
+  strategyId?: number | null;
 
   // plan_bundle_items (optional)
   bundleItems?: { includedPlanId: number; quantity?: number }[]; // includedPlanId is BIGINT
@@ -73,7 +73,7 @@ export interface IUpdateSubscriptionPlan {
 
   // replace-all behavior
   features?: FeatureKV | null;      // null => clear all features
-  strategyIds?: number[] | null;    // null => clear all strategies
+  strategyId?: number | null;       // null => clear strategy
   bundleItems?: { includedPlanId: number; quantity?: number }[] | null; // null => clear bundle items
 }
 

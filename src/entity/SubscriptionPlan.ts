@@ -21,6 +21,7 @@ import { PlanBundleItem } from "./PlanBundleItem";
 import { UserSubscription } from "./UserSubscription";
 import { SubscriptionInvoice } from "./SubscriptionInvoice";
 import { PlanStrategy } from "./PlanStrategy";
+import { PlanAdminWebhookToken } from "./PlanAdminWebhookToken";
 
 @Entity({ name: "subscription_plans" })
 export class SubscriptionPlan {
@@ -61,6 +62,9 @@ export class SubscriptionPlan {
   })
   metadata!: Record<string, any>;
 
+  @Column({ name: "admin_webhook_token", type: "text", nullable: true, select: false })
+  adminWebhookToken!: string | null;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 
@@ -91,4 +95,7 @@ export class SubscriptionPlan {
 
   @OneToMany(() => SubscriptionInvoice, (inv) => inv.plan)
   invoices?: SubscriptionInvoice[];
+
+  @OneToOne(() => PlanAdminWebhookToken, (token) => token.plan)
+  adminWebhook?: PlanAdminWebhookToken | null;
 }

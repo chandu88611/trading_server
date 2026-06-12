@@ -13,6 +13,7 @@ exports.User = void 0;
 // src/entity/User.ts
 const typeorm_1 = require("typeorm");
 const AuthProvider_1 = require("./AuthProvider");
+const UserEdgingStatus_1 = require("./UserEdgingStatus");
 let User = class User {
 };
 exports.User = User;
@@ -28,6 +29,14 @@ __decorate([
     (0, typeorm_1.Column)({ type: "text", nullable: true }),
     __metadata("design:type", Object)
 ], User.prototype, "name", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "referral_code", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], User.prototype, "referralCode", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "referred_by_user_id", type: "int", nullable: true }),
+    __metadata("design:type", Object)
+], User.prototype, "referredByUserId", void 0);
 __decorate([
     (0, typeorm_1.Column)({ name: "password_hash", type: "text", nullable: false }),
     __metadata("design:type", String)
@@ -148,6 +157,10 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => AuthProvider_1.AuthProvider, (ap) => ap.user),
     __metadata("design:type", Array)
 ], User.prototype, "authProviders", void 0);
+__decorate([
+    (0, typeorm_1.OneToOne)(() => UserEdgingStatus_1.UserEdgingStatus, (ues) => ues.user),
+    __metadata("design:type", UserEdgingStatus_1.UserEdgingStatus)
+], User.prototype, "userEdgingStatus", void 0);
 exports.User = User = __decorate([
     (0, typeorm_1.Entity)({ name: "users" })
 ], User);

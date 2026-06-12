@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.COOKIE_NAMES = void 0;
 exports.setAuthCookies = setAuthCookies;
 exports.clearAuthCookies = clearAuthCookies;
-const isProd = process.env.NODE_ENV === "production";
 exports.COOKIE_NAMES = {
     access: "access_token",
     refresh: "refresh_token",
@@ -15,10 +14,10 @@ function setAuthCookies(res, accessJwt, refreshJwt) {
         sameSite: "none",
         path: "/",
     };
-    // access token short ttl (example 15m)
+    // access token ttl matches backend JWT lifetime
     res.cookie(exports.COOKIE_NAMES.access, accessJwt, {
         ...common,
-        maxAge: 1000 * 60 * 15,
+        maxAge: 1000 * 60 * 60 * 24 * 30,
     });
     // refresh token longer ttl (example 15 days)
     res.cookie(exports.COOKIE_NAMES.refresh, refreshJwt, {

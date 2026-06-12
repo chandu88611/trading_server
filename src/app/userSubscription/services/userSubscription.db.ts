@@ -1,28 +1,227 @@
-import { Brackets, DeepPartial, Repository } from "typeorm";
+import { Brackets, DeepPartial, EntityManager, In, Repository } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 
 import { UserSubscription } from "../../../entity/UserSubscription";
 import { SubscriptionPlan } from "../../../entity/SubscriptionPlan";
 
 import { signWebhookToken } from "../../../middleware/auth";
-import { SubscriptionStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
+import {
+  SubscriptionStatus,
+  UserStrategyStatus,
+} from "../../subscriptionPlan/enums/subscriberPlan.enum";
 import { MarketType } from "../../../types/trade-identify";
 import { CopyTradingFollowers } from "../../../entity/CopyTradingFollow";
+import { PlanStrategy } from "../../../entity/PlanStrategy";
+import { UserStrategyInstance } from "../../../entity/UserStrategyInstance";
+
+const DEFAULT_STRATEGY_VOLUME = "0.01";
 
 export class UserSubscriptionDBService {
   private subRepo: Repository<UserSubscription>;
   private planRepo: Repository<SubscriptionPlan>;
   private copyTradingFollowersRepo: Repository<CopyTradingFollowers>;
+  private userStrategyInstanceRepo: Repository<UserStrategyInstance>;
 
   constructor() {
     this.subRepo = AppDataSource.getRepository(UserSubscription);
     this.planRepo = AppDataSource.getRepository(SubscriptionPlan);
     this.copyTradingFollowersRepo = AppDataSource.getRepository(CopyTradingFollowers);
+    this.userStrategyInstanceRepo = AppDataSource.getRepository(UserStrategyInstance);
+  }
+
+  private getManager(manager?: EntityManager) {
+    return manager ?? this.subRepo.manager;
+  }
+
+  async ensureSchema() {
+    await AppDataSource.query(`
+      ALTER TABLE user_subscriptions
+      ADD COLUMN IF NOT EXISTS status TEXT;
+    `);
+
+    await AppDataSource.query(`
+      UPDATE user_subscriptions
+      SET status_v2 = status::subscription_status
+      WHERE status_v2 IS NULL
+        AND status IN (
+          'trialing',
+          'active',
+          'past_due',
+          'liquidate_only',
+          'paused',
+          'canceled',
+          'expired'
+        );
+    `);
+
+    await AppDataSource.query(`
+      UPDATE user_subscriptions
+      SET status = status_v2::text
+      WHERE status_v2 IS NOT NULL
+        AND COALESCE(status, '') <> status_v2::text;
+    `);
+
+    await AppDataSource.query(`
+      DROP INDEX IF EXISTS uq_user_subscriptions_id_user;
+    `);
+
+    await AppDataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_user_subscriptions_id_user
+      ON user_subscriptions(user_id, plan_id)
+      WHERE status_v2 = 'active'::subscription_status;
+    `);
+
+    await AppDataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_user_subscriptions_webhook_token
+      ON user_subscriptions(webhook_token)
+      WHERE webhook_token IS NOT NULL;
+    `);
+  }
+
+  async ensureWebhookToken(
+    subscription: UserSubscription,
+    manager?: EntityManager
+  ): Promise<UserSubscription> {
+    if (subscription.webhookToken) {
+      return subscription;
+    }
+
+    const token = signWebhookToken(
+      {
+        userId: Number(subscription.userId),
+        subscriptionId: Number(subscription.id),
+        planId: Number(subscription.planId),
+      },
+      subscription.endDate ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+    );
+
+    subscription.webhookToken = token;
+    return this.getManager(manager).getRepository(UserSubscription).save(subscription);
+  }
+
+  async getPlanStrategy(planId: number, manager?: EntityManager) {
+    return this.getManager(manager)
+      .getRepository(PlanStrategy)
+      .createQueryBuilder("planStrategy")
+      .leftJoinAndSelect("planStrategy.strategy", "strategy")
+      .where("planStrategy.plan_id = :planId", { planId })
+      .orderBy("planStrategy.created_at", "ASC")
+      .addOrderBy("planStrategy.id", "ASC")
+      .getOne();
+  }
+
+  async upsertStrategyInstanceForSubscription(
+    subscription: UserSubscription,
+    manager?: EntityManager
+  ): Promise<UserStrategyInstance | null> {
+    const entityManager = this.getManager(manager);
+    const planStrategy = await this.getPlanStrategy(Number(subscription.planId), entityManager);
+    if (!planStrategy || !planStrategy.strategy) {
+      return null;
+    }
+
+    const repo = entityManager.getRepository(UserStrategyInstance);
+    const existing = await repo.findOne({
+      where: {
+        subscriptionId: Number(subscription.id),
+        strategyId: Number(planStrategy.strategyId),
+      },
+    });
+
+    const next = repo.create({
+      ...(existing ?? {}),
+      userId: Number(subscription.userId),
+      subscriptionId: Number(subscription.id),
+      planId: Number(subscription.planId),
+      strategyId: Number(planStrategy.strategyId),
+      tradingAccountId: null,
+      strategyVersion: Number(planStrategy.strategy.version ?? 1),
+      frozenParams: planStrategy.strategy.defaultParams ?? {},
+      status: UserStrategyStatus.ACTIVE,
+      pausedAt: null,
+      stoppedAt: null,
+      volume: existing?.volume ?? DEFAULT_STRATEGY_VOLUME,
+      activatedAt: existing?.activatedAt ?? new Date(),
+    });
+
+    return repo.save(next);
+  }
+
+  async stopStrategyInstancesForSubscription(
+    subscriptionId: number,
+    manager?: EntityManager
+  ): Promise<void> {
+    await this.getManager(manager)
+      .createQueryBuilder()
+      .update(UserStrategyInstance)
+      .set({
+        status: UserStrategyStatus.STOPPED,
+        stoppedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where("subscription_id = :subscriptionId", { subscriptionId })
+      .andWhere("status != :status", { status: UserStrategyStatus.STOPPED })
+      .execute();
+  }
+
+  async getStrategyInstancesForSubscriptions(
+    userId: number,
+    subscriptionIds: number[]
+  ): Promise<UserStrategyInstance[]> {
+    if (!subscriptionIds.length) {
+      return [];
+    }
+
+    return this.userStrategyInstanceRepo.find({
+      where: {
+        userId,
+        subscriptionId: In(subscriptionIds),
+      },
+      relations: {
+        strategy: true,
+      },
+    });
+  }
+
+  async getStrategyInstancesBySubscriptionIds(
+    subscriptionIds: number[]
+  ): Promise<UserStrategyInstance[]> {
+    if (!subscriptionIds.length) {
+      return [];
+    }
+
+    return this.userStrategyInstanceRepo.find({
+      where: {
+        subscriptionId: In(subscriptionIds),
+      },
+      relations: {
+        strategy: true,
+      },
+    });
+  }
+
+  async getActiveStrategySubscriptionsForPlan(planId: number): Promise<UserSubscription[]> {
+    return this.subRepo
+      .createQueryBuilder("subscription")
+      .leftJoinAndSelect("subscription.user", "user")
+      .leftJoinAndSelect("subscription.plan", "plan")
+      .leftJoinAndSelect("plan.market", "market")
+      .leftJoinAndSelect("plan.planStrategies", "planStrategies")
+      .leftJoinAndSelect("planStrategies.strategy", "strategy")
+      .where("subscription.plan_id = :planId", { planId })
+      .andWhere("subscription.status_v2 = :status", {
+        status: SubscriptionStatus.ACTIVE,
+      })
+      .andWhere("COALESCE(user.is_admin, false) = false")
+      .orderBy("subscription.created_at", "DESC")
+      .getMany();
   }
 
   async getActiveSubscription(userId: number, plan?: SubscriptionPlan) {
     let query =   this.subRepo.createQueryBuilder("us")
     .leftJoinAndSelect("us.plan", "plan")
+    .leftJoinAndSelect("plan.planStrategies", "planStrategies")
+    .leftJoinAndSelect("planStrategies.strategy", "strategy")
     .where("us.user_id = :userId", { userId })
     .andWhere("us.status_v2 = :status", { status: SubscriptionStatus.ACTIVE })
     .andWhere("plan.is_active = true")
@@ -33,6 +232,24 @@ export class UserSubscriptionDBService {
     console.log("getActiveSubscription", { userId, data });
     return data
 
+  }
+
+  async getActiveSubscriptionById(userId: number, subscriptionId: number) {
+    return this.subRepo.findOne({
+      where: {
+        id: subscriptionId as any,
+        userId: userId as any,
+        statusV2: SubscriptionStatus.ACTIVE as any,
+      } as any,
+      relations: {
+        plan: {
+          market: true,
+          planStrategies: {
+            strategy: true,
+          },
+        },
+      } as any,
+    });
   }
 
     async getActiveSubscriptionCurrent(userId: number,start: number, count: number,  searchParams?: any) {
@@ -72,6 +289,7 @@ export class UserSubscriptionDBService {
         .leftJoinAndSelect("plan.features", "features")
         .leftJoinAndSelect("plan.limits", "limits")
         .leftJoinAndSelect("plan.planStrategies", "planStrategies")
+        .leftJoinAndSelect("planStrategies.strategy", "strategy")
         .leftJoinAndSelect("plan.includedInBundles", "includedInBundles")
         .leftJoinAndSelect("includedInBundles.bundlePlan", "bundlePlan")
         .leftJoinAndSelect("bundlePlan.pricing", "bundlePlanPricing")
@@ -160,6 +378,9 @@ export class UserSubscriptionDBService {
         pricing: true,
         planType: true,
         market: true,
+        planStrategies: {
+          strategy: true,
+        },
       } as any,
     });
   }
@@ -185,20 +406,21 @@ export class UserSubscriptionDBService {
       metadata: null,
     } as any;
 
-    const sub = this.subRepo.create(data);
-    const saved = await this.subRepo.save(sub);
-
-    const webhookToken = signWebhookToken(
-      {
-        userId,
-        subscriptionId: saved.id,
-        planId,
-      },
-      saved.endDate as Date
-    );
-
-    saved.webhookToken = webhookToken;
-    return this.subRepo.save(saved);
+    try {
+      const sub = this.subRepo.create(data);
+      const saved = await this.subRepo.save(sub);
+      const withToken = await this.ensureWebhookToken(saved);
+      await this.upsertStrategyInstanceForSubscription(withToken);
+      return withToken;
+    } catch (error: any) {
+      if (error?.code === "23505" && error?.constraint === "uq_user_subscriptions_id_user") {
+        throw {
+          statusCode: 409,
+          message: "User already has an active subscription for this plan",
+        };
+      }
+      throw error;
+    }
   }
 
   /**
@@ -206,15 +428,27 @@ export class UserSubscriptionDBService {
    * But your current behavior ends subscription now, so keeping same behavior.
    */
   async cancelSubscriptionNow(userId: number) {
-    return this.subRepo.update(
-      { userId: userId as any, statusV2: SubscriptionStatus.ACTIVE as any } as any,
-      {
-        statusV2: SubscriptionStatus.CANCELED as any,
-        status: "canceled",
-        canceledAt: new Date(),
-        endDate: new Date(),
-      } as any
-    );
+    return AppDataSource.transaction(async (trx) => {
+      const repo = trx.getRepository(UserSubscription);
+      const activeSubs = await repo.find({
+        where: { userId: userId as any, statusV2: SubscriptionStatus.ACTIVE as any } as any,
+      });
+
+      await repo.update(
+        { userId: userId as any, statusV2: SubscriptionStatus.ACTIVE as any } as any,
+        {
+          statusV2: SubscriptionStatus.CANCELED as any,
+          status: "canceled",
+          canceledAt: new Date(),
+          endDate: new Date(),
+          executionEnabled: false,
+        } as any
+      );
+
+      for (const subscription of activeSubs) {
+        await this.stopStrategyInstancesForSubscription(Number(subscription.id), trx);
+      }
+    });
   }
 
   /**
@@ -246,7 +480,11 @@ export class UserSubscriptionDBService {
     return this.subRepo.find({
       where: { userId: userId as any } as any,
       relations: {
-        plan: true,
+        plan: {
+          planStrategies: {
+            strategy: true,
+          },
+        },
       } as any,
       order: { createdAt: "DESC" } as any,
     });
@@ -261,6 +499,8 @@ export class UserSubscriptionDBService {
     const qb = this.subRepo
       .createQueryBuilder("us")
       .innerJoinAndSelect("us.plan", "plan")
+      .leftJoinAndSelect("plan.planStrategies", "planStrategies")
+      .leftJoinAndSelect("planStrategies.strategy", "strategy")
       .leftJoinAndSelect("plan.market", "market")
       .where("us.user_id = :userId", { userId })
       .andWhere("us.status_v2 = :status", { status: SubscriptionStatus.ACTIVE })
@@ -286,5 +526,78 @@ export class UserSubscriptionDBService {
     } catch (error) {
       throw error
     }
+  }
+
+  async saveWebhookSettings(
+    userId: number,
+    payload: {
+      subscriptionId?: number | null;
+      planId?: number | null;
+      isWebhookEnabled: boolean;
+      defaultTradingAccountId?: number | null;
+      payloadDefaults?: Record<string, any>;
+    }
+  ) {
+    const qb = this.subRepo
+      .createQueryBuilder("sub")
+      .leftJoinAndSelect("sub.plan", "plan")
+      .where("sub.user_id = :userId", { userId });
+
+    if (payload.subscriptionId) {
+      qb.andWhere("sub.id = :subscriptionId", { subscriptionId: payload.subscriptionId });
+    } else if (payload.planId) {
+      qb.andWhere("sub.plan_id = :planId", { planId: payload.planId });
+    }
+
+    const sub = await qb.orderBy("sub.updated_at", "DESC").getOne();
+    if (!sub) {
+      throw { statusCode: 404, message: "subscription_not_found" };
+    }
+
+    let defaultTradingAccountId = payload.defaultTradingAccountId ?? null;
+    if (defaultTradingAccountId) {
+      const account = await AppDataSource.query(
+        `
+        SELECT id
+        FROM user_trading_accounts
+        WHERE id = $1
+          AND user_id = $2
+          AND is_enabled = true
+        `,
+        [defaultTradingAccountId, userId]
+      );
+      if (!account[0]) {
+        throw { statusCode: 400, message: "invalid_default_trading_account" };
+      }
+    }
+
+    sub.isWebhookEnabled = Boolean(payload.isWebhookEnabled);
+    sub.metadata = {
+      ...(sub.metadata ?? {}),
+      webhookSettings: {
+        ...((sub.metadata ?? {}).webhookSettings ?? {}),
+        isWebhookEnabled: Boolean(payload.isWebhookEnabled),
+        defaultTradingAccountId,
+        payloadDefaults:
+          payload.payloadDefaults && typeof payload.payloadDefaults === "object"
+            ? payload.payloadDefaults
+            : {},
+      },
+    };
+
+    const saved = sub.isWebhookEnabled
+      ? await this.ensureWebhookToken(sub)
+      : await this.subRepo.save(sub);
+
+    return {
+      id: Number(saved.id),
+      subscriptionId: Number(saved.id),
+      planId: Number(saved.planId),
+      isWebhookEnabled: Boolean(saved.isWebhookEnabled),
+      webhookToken: saved.webhookToken,
+      defaultTradingAccountId,
+      payloadDefaults: (saved.metadata ?? {}).webhookSettings?.payloadDefaults ?? {},
+      metadata: saved.metadata ?? {},
+    };
   }
 }

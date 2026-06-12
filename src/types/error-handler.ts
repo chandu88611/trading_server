@@ -34,6 +34,32 @@ class ErrorResponder {
   }
 }
 
+async function logErrorEvent(req: Request, err: AppError) {
+  try {
+    const statusCode = err.statusCode ?? HttpStatusCode._INTERNAL_SERVER_ERROR;
+    const { default: AppDataSource } = await import("../db/data-source");
+    if (!AppDataSource.isInitialized) return;
+    await AppDataSource.query(
+      `
+      INSERT INTO error_events(service, severity, message, stack, route, method, actor_user_id, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      `,
+      [
+        "trading_server",
+        statusCode >= 500 ? "error" : "warn",
+        String(err.message ?? ErrorMessage.INTERNAL_SERVER_ERROR),
+        err.stack ?? null,
+        req.originalUrl ?? req.path,
+        req.method,
+        Number((req as any).auth?.userId) || null,
+        JSON.stringify({ statusCode, data: err.data ?? null }),
+      ]
+    );
+  } catch (_error) {
+    // Error logging is diagnostic only; never mask the original controller response.
+  }
+}
+
 /**
  * Decorator factory for controller methods to catch errors and produce HTTP responses.
  * Usage:
@@ -65,6 +91,7 @@ export function ControllerError(): MethodDecorator {
 
         // eslint-disable-next-line no-console
         console.error("Controller error caught", rawErr);
+        void logErrorEvent(req, rawErr);
         ErrorResponder.respond(res, rawErr);
       }
     };
@@ -94,6 +121,7 @@ export function errorHandler(
       }
       // eslint-disable-next-line no-console
       console.error("Middleware caught error", err);
+      void logErrorEvent(req, err);
       ErrorResponder.respond(res, err);
     }
   };

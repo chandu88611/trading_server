@@ -5,7 +5,21 @@ export function validateRegister(
   res: Response,
   next: NextFunction
 ) {
-  const { provider, providerUserId, email, password, name } = req.body ?? {};
+  const { provider, providerUserId, email, password, name, isAdmin, referralCode } =
+    req.body ?? {};
+
+  if (isAdmin !== undefined && typeof isAdmin !== "boolean") {
+    return res.status(400).json({ message: "isAdmin must be a boolean" });
+  }
+
+  if (referralCode !== undefined && typeof referralCode !== "string") {
+    return res.status(400).json({ message: "referralCode must be a string" });
+  }
+
+  req.body.referralCode =
+    typeof referralCode === "string"
+      ? referralCode.trim().toUpperCase() || undefined
+      : undefined;
 
   // If provider provided (google), require providerUserId
   if (provider) {
@@ -13,6 +27,10 @@ export function validateRegister(
       return res
         .status(400)
         .json({ message: "providerUserId is required for provider signup" });
+    if (typeof email === "string") {
+      req.body.email = email.toLowerCase();
+    }
+    req.body.name = typeof name === "string" ? name : undefined;
     return next();
   }
 

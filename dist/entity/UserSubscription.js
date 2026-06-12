@@ -15,6 +15,7 @@ const User_1 = require("./User");
 const SubscriptionPlan_1 = require("./SubscriptionPlan");
 const subscriberPlan_enum_1 = require("../app/subscriptionPlan/enums/subscriberPlan.enum");
 const UserTradingAccount_1 = require("./UserTradingAccount");
+const UserStrategyInstance_1 = require("./UserStrategyInstance");
 let UserSubscription = class UserSubscription {
 };
 exports.UserSubscription = UserSubscription;
@@ -42,6 +43,10 @@ __decorate([
     (0, typeorm_1.JoinColumn)({ name: "plan_id" }),
     __metadata("design:type", SubscriptionPlan_1.SubscriptionPlan)
 ], UserSubscription.prototype, "plan", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "status", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], UserSubscription.prototype, "status", void 0);
 __decorate([
     (0, typeorm_1.Column)({
         name: "status_v2",
@@ -85,6 +90,10 @@ __decorate([
     __metadata("design:type", Object)
 ], UserSubscription.prototype, "cancelAt", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "canceled_at", type: "timestamptz", nullable: true }),
+    __metadata("design:type", Object)
+], UserSubscription.prototype, "canceledAt", void 0);
+__decorate([
     (0, typeorm_1.Column)({ type: "jsonb", nullable: true }),
     __metadata("design:type", Object)
 ], UserSubscription.prototype, "metadata", void 0);
@@ -92,6 +101,10 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => UserTradingAccount_1.UserTradingAccount, (a) => a.subscription),
     __metadata("design:type", Array)
 ], UserSubscription.prototype, "tradingAccounts", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => UserStrategyInstance_1.UserStrategyInstance, (instance) => instance.subscription),
+    __metadata("design:type", Array)
+], UserSubscription.prototype, "strategyInstances", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)({ name: "created_at", type: "timestamptz" }),
     __metadata("design:type", Date)

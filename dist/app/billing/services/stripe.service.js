@@ -6,14 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StripeService = void 0;
 exports.toStripeInterval = toStripeInterval;
 const stripe_1 = __importDefault(require("stripe"));
-const entity_1 = require("../../../entity");
-const data_source_1 = __importDefault(require("../../../db/data-source"));
 const strip_interface_1 = require("../enums/strip.interface");
 const stripe = new stripe_1.default(process.env.STRIPE_API_KEY || "");
 class StripeService {
-    constructor() {
-        this.planRepo = data_source_1.default.getRepository(entity_1.SubscriptionPlan);
-    }
     async getOrCreateCustomer(userId, email, name) {
         const customer = await stripe.customers.create({
             email,
@@ -28,12 +23,16 @@ class StripeService {
             description: plan.description || undefined,
             metadata: { planId: String(plan.id) },
         });
-        const priceUnit = plan.priceCents;
+        const pricing = plan.pricing;
+        if (!pricing) {
+            throw new Error("plan_pricing_not_found");
+        }
+        const priceUnit = pricing.priceInr;
         const price = await stripe.prices.create({
             product: product.id,
             unit_amount: priceUnit,
-            currency: plan.currency.toLowerCase(),
-            recurring: { interval: toStripeInterval(plan.interval) },
+            currency: String(pricing.currency || "INR").toLowerCase(),
+            recurring: { interval: toStripeInterval(pricing.interval) },
             metadata: { planId: String(plan.id) },
         });
         const session = await stripe.checkout.sessions.create({
@@ -66,8 +65,10 @@ exports.StripeService = StripeService;
 function toStripeInterval(interval) {
     switch (interval) {
         case strip_interface_1.BillingInterval.MONTHLY:
+        case "monthly":
             return "month";
         case strip_interface_1.BillingInterval.YEARLY:
+        case "yearly":
             return "year";
         default:
             throw new Error(`Unsupported interval: ${interval}`);

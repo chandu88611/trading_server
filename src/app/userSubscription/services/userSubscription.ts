@@ -3,14 +3,67 @@ import {
   IUserSubscribePayload,
   IUserSubscriptionCancelPayload,
 } from "../interfaces/userSubscription.interface";
+import { HttpStatusCode } from "../../../types/constants";
 import { MarketType } from "../../../types/trade-identify";
-import { SubscriptionPlan } from "../../../entity";
+import { SubscriptionPlan, UserStrategyInstance, UserSubscription } from "../../../entity";
+import {
+  normalizePlanStrategies,
+  selectPrimaryPlanStrategy,
+  selectUnavailablePlanStrategyForNewSubscription,
+} from "../../subscriptionPlan/utils/planStrategy";
 
 export class UserSubscriptionService {
   private db: UserSubscriptionDBService;
 
   constructor() {
     this.db = new UserSubscriptionDBService();
+  }
+
+  async ensureSchema() {
+    await this.db.ensureSchema();
+  }
+
+  private buildStrategyMap(instances: UserStrategyInstance[]) {
+    return new Map(
+      instances.map((instance) => [
+        Number(instance.subscriptionId),
+        {
+          instanceId: Number(instance.id),
+          status: instance.status,
+          volume: Number(instance.volume),
+          definition: {
+            id: Number(instance.strategy.id),
+            strategyCode: instance.strategy.strategyCode,
+            name: instance.strategy.name,
+            isActive: Boolean(instance.strategy.isActive),
+          },
+          managedByAdminWebhook: true as const,
+        },
+      ])
+    );
+  }
+
+  private attachStrategy(subscription: UserSubscription, strategyMap: Map<number, any>) {
+    const normalizedPlanStrategies = normalizePlanStrategies(
+      subscription.plan?.planStrategies as any
+    );
+    const firstPlanStrategy = selectPrimaryPlanStrategy(normalizedPlanStrategies as any);
+    return Object.assign(subscription as any, {
+      strategy: firstPlanStrategy
+        ? strategyMap.get(Number(subscription.id)) ?? null
+        : null,
+      plan: Object.assign(subscription.plan as any, {
+        planStrategies: normalizedPlanStrategies.slice(0, 1),
+        strategy: firstPlanStrategy?.strategy
+          ? {
+              id: Number(firstPlanStrategy.strategy.id),
+              strategyCode: firstPlanStrategy.strategy.strategyCode,
+              name: firstPlanStrategy.strategy.name,
+              isActive: Boolean(firstPlanStrategy.strategy.isActive),
+            }
+          : null,
+      }),
+    });
   }
 
   async subscribe(userId: number, payload: IUserSubscribePayload) {
@@ -28,6 +81,12 @@ export class UserSubscriptionService {
 
     if (alreadySubscribedToSamePlan) {
       throw new Error("User already has an active subscription for this plan");
+    }
+    if (selectUnavailablePlanStrategyForNewSubscription(plan.planStrategies as any)) {
+      throw {
+        statusCode: HttpStatusCode._BAD_REQUEST,
+        message: "strategy_unavailable_for_new_subscription",
+      };
     }
     // NEW DESIGN: interval comes from pricing.interval
     const interval = (plan as any).pricing?.interval ?? "monthly";
@@ -50,8 +109,18 @@ export class UserSubscriptionService {
     await this.db.cancelSubscriptionNow(userId);
   }
 
-  getCurrentSubscription(userId: number, start: number, count: number, searchParams?: any) {
-    return this.db.getActiveSubscriptionCurrent(userId, start, count, searchParams);
+  async getCurrentSubscription(userId: number, start: number, count: number, searchParams?: any) {
+    const subscription = await this.db.getActiveSubscriptionCurrent(userId, start, count, searchParams);
+    const subscriptionIds = (subscription.data ?? []).map((item: UserSubscription) => Number(item.id));
+    const instances = await this.db.getStrategyInstancesForSubscriptions(userId, subscriptionIds);
+    const strategyMap = this.buildStrategyMap(instances);
+
+    return {
+      ...subscription,
+      data: (subscription.data ?? []).map((item: UserSubscription) =>
+        this.attachStrategy(item, strategyMap)
+      ),
+    };
   }
 
   getFollowerUserTradingAccount(userId: number, start: number, count: number, searchParams?: any) {
@@ -76,5 +145,18 @@ export class UserSubscriptionService {
     } catch (error) {
       throw error
     }
+  }
+
+  saveWebhookSettings(
+    userId: number,
+    payload: {
+      subscriptionId?: number | null;
+      planId?: number | null;
+      isWebhookEnabled: boolean;
+      defaultTradingAccountId?: number | null;
+      payloadDefaults?: Record<string, any>;
+    }
+  ) {
+    return this.db.saveWebhookSettings(userId, payload);
   }
 }

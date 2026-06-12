@@ -13,15 +13,28 @@ class CTraderService {
     constructor(opts) {
         this.lastHealthAt = 0;
         this.lastHealth = null;
+        const legacyTimeoutMs = opts?.timeoutMs;
         this.baseUrl = (opts?.baseUrl ?? process.env.CTRADER_GATEWAY_URL ?? "http://69.62.126.107:8089").replace(/\/+$/, "");
-        this.timeoutMs = opts?.timeoutMs ?? Number(process.env.CTRADER_HEALTH_TIMEOUT_MS ?? 5000);
+        this.healthTimeoutMs = opts?.healthTimeoutMs
+            ?? legacyTimeoutMs
+            ?? Number(process.env.CTRADER_HEALTH_TIMEOUT_MS ?? 5000);
+        this.requestTimeoutMs = opts?.requestTimeoutMs
+            ?? legacyTimeoutMs
+            ?? Number(process.env.CTRADER_EXEC_TIMEOUT_MS ?? process.env.CTRADER_REQUEST_TIMEOUT_MS ?? 15000);
+        this.maxRetryAttempts = opts?.maxRetryAttempts
+            ?? Number(process.env.CTRADER_EXEC_MAX_RETRY_ATTEMPTS ?? 5);
+        this.retryBaseDelayMs = opts?.retryBaseDelayMs
+            ?? Number(process.env.CTRADER_EXEC_RETRY_BASE_MS ?? 1500);
         this.db = new cTrader_db_1.CTradeSignalDB();
+    }
+    async ensureSchema() {
+        await this.db.ensureSchema();
     }
     async checkConnection() {
         const url = `${this.baseUrl}/health`;
         const started = Date.now();
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        const timeout = setTimeout(() => controller.abort(), this.healthTimeoutMs);
         try {
             const res = await fetch(url, {
                 method: "GET",
@@ -57,7 +70,7 @@ class CTraderService {
                 ok: false,
                 url,
                 latencyMs,
-                error: isAbort ? `timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)),
+                error: isAbort ? `timeout_after_${this.healthTimeoutMs}ms` : (err?.message ?? String(err)),
             };
         }
         finally {
@@ -75,6 +88,81 @@ class CTraderService {
     }
     async makeCall({ start, count }) {
         return this.db.getAllTradeTo({ start, count });
+    }
+    /**
+     * Read account funds/balance for a user's cTrader account via the gateway's
+     * GET /account (PROTO_OA_TRADER_RES). cTrader money is scaled by moneyDigits.
+     * Normalized to the shared funds shape used by Zebu/Dhan/MT5.
+     */
+    async getFunds(userId, tradingAccountId) {
+        const acc = await this.db.getAccountForFunds(userId, tradingAccountId);
+        if (!acc) {
+            throw { statusCode: 404, message: "trading_account_not_found" };
+        }
+        if (!acc.accessToken) {
+            throw { statusCode: 400, message: "ctrader_account_not_authorized" };
+        }
+        const callAccount = async (token) => {
+            const url = `${this.baseUrl}/account`;
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+            try {
+                const res = await fetch(url, {
+                    method: "GET",
+                    headers: {
+                        accept: "application/json",
+                        "x-user-id": acc.gatewayUserId,
+                        "x-ctrader-access-token": token,
+                        "x-ctrader-env": acc.env,
+                    },
+                    signal: controller.signal,
+                });
+                const ct = res.headers.get("content-type") ?? "";
+                let body = null;
+                try {
+                    body = ct.includes("application/json") ? await res.json() : await res.text();
+                }
+                catch { }
+                return { ok: res.ok, status: res.status, body };
+            }
+            finally {
+                clearTimeout(timer);
+            }
+        };
+        let attempt = await callAccount(acc.accessToken);
+        // One refresh-and-retry on auth failure.
+        if (!attempt.ok && this.isGatewayTokenAuthError(attempt.status, attempt.body) && acc.refreshToken) {
+            try {
+                const refreshed = await this.refreshTokenDirect(acc.refreshToken);
+                await this.db.updateTradingAccountTokens(acc.tradingAccountId, refreshed.accessToken, refreshed.refreshToken);
+                attempt = await callAccount(refreshed.accessToken);
+            }
+            catch {
+                /* fall through to error below */
+            }
+        }
+        if (!attempt.ok) {
+            throw {
+                statusCode: 502,
+                message: "ctrader_account_fetch_failed",
+                data: { status: attempt.status, payload: attempt.body },
+            };
+        }
+        const decoded = attempt.body?.decoded ?? attempt.body ?? {};
+        const trader = decoded?.trader ?? decoded ?? {};
+        const moneyDigits = Number(trader?.moneyDigits ?? 2);
+        const scale = Math.pow(10, Number.isFinite(moneyDigits) ? moneyDigits : 2);
+        const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+        const balance = num(trader?.balance) / scale;
+        return {
+            ok: true,
+            availableCash: balance,
+            marginUsed: 0,
+            collateral: 0,
+            totalFunds: balance,
+            currency: trader?.depositAssetId ? String(trader.depositAssetId) : undefined,
+            raw: trader,
+        };
     }
     getTokenUrl() {
         return String(process.env.CTRADER_TOKEN_URL ?? "https://openapi.ctrader.com/apps/token").trim();
@@ -104,7 +192,7 @@ class CTraderService {
     }
     async postOAuthForm(body) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
         try {
             const res = await fetch(this.getTokenUrl(), {
                 method: "POST",
@@ -132,11 +220,37 @@ class CTraderService {
         catch (err) {
             const isAbort = err?.name === "AbortError" ||
                 String(err?.message ?? "").toLowerCase().includes("aborted");
-            throw new Error(isAbort ? `oauth_timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)));
+            throw new Error(isAbort ? `oauth_timeout_after_${this.requestTimeoutMs}ms` : (err?.message ?? String(err)));
         }
         finally {
             clearTimeout(timeout);
         }
+    }
+    isTransientExecutionFailure(result) {
+        const status = Number(result?.status ?? 0);
+        if (status >= 500 && status < 600)
+            return true;
+        const errorText = String(result?.error ?? "").trim().toLowerCase();
+        if (!errorText)
+            return false;
+        return [
+            "timeout_after_",
+            "accounts_timeout_after_",
+            "accounts_fetch_failed status=500",
+            "accounts_fetch_failed status=502",
+            "accounts_fetch_failed status=503",
+            "exec_failed status=500",
+            "exec_failed status=502",
+            "exec_failed status=503",
+            "close_exec_failed status=500",
+            "close_exec_failed status=502",
+            "close_exec_failed status=503",
+            "disconnected",
+            "not connected",
+            "fetch failed",
+            "appauth",
+            "readypromise rejected",
+        ].some((needle) => errorText.includes(needle));
     }
     async exchangeCodeDirect(code) {
         const oauthCode = String(code ?? "").trim();
@@ -160,6 +274,46 @@ class CTraderService {
         body.set("client_id", this.requiredEnv("CTRADER_CLIENT_ID"));
         body.set("client_secret", this.requiredEnv("CTRADER_CLIENT_SECRET"));
         return this.postOAuthForm(body);
+    }
+    async findActiveSubscriptionForBrokerMarket(queryRunner, userId, marketCategory) {
+        const normalizedMarket = String(marketCategory ?? "").trim().toUpperCase();
+        if (!Number.isFinite(userId) || userId <= 0 || !normalizedMarket)
+            return null;
+        return queryRunner.manager
+            .getRepository(entity_1.UserSubscription)
+            .createQueryBuilder("subscription")
+            .innerJoinAndSelect("subscription.plan", "plan")
+            .innerJoinAndSelect("plan.market", "market")
+            .where("subscription.userId = :userId", { userId })
+            .andWhere("(subscription.statusV2 = :active OR subscription.status = :active)", {
+            active: subscriberPlan_enum_1.SubscriptionStatus.ACTIVE,
+        })
+            .andWhere("UPPER(market.code) = :market", { market: normalizedMarket })
+            .orderBy("subscription.updatedAt", "DESC")
+            .addOrderBy("subscription.id", "DESC")
+            .getOne();
+    }
+    async rebindAccountToActiveSubscription(queryRunner, acc, broker) {
+        const userId = Number(acc.userId);
+        const activeSubscription = await this.findActiveSubscriptionForBrokerMarket(queryRunner, userId, broker.marketCategory);
+        if (!activeSubscription)
+            return;
+        const currentSubscriptionId = Number(acc.subscriptionId);
+        const activeSubscriptionId = Number(activeSubscription.id);
+        if (currentSubscriptionId === activeSubscriptionId)
+            return;
+        console.log("[CTRADER] rebinding verified account to active subscription", {
+            userId,
+            tradingAccountId: acc.id,
+            accountId: acc.accountId,
+            brokerCode: broker.code,
+            marketCategory: broker.marketCategory,
+            previousSubscriptionId: Number.isFinite(currentSubscriptionId)
+                ? currentSubscriptionId
+                : null,
+            activeSubscriptionId,
+        });
+        acc.subscriptionId = activeSubscriptionId;
     }
     isGatewayTokenAuthError(status, payload, fallbackError) {
         if (status === 401)
@@ -205,10 +359,18 @@ class CTraderService {
             return null;
         return n;
     }
+    toPositiveBrokerRef(v) {
+        if (v === undefined || v === null || v === "")
+            return undefined;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0)
+            return undefined;
+        return typeof v === "string" ? String(v) : n;
+    }
     async resolveGatewayAccountId(userId, requestedAccountId, token, envHeader) {
         const url = `${this.baseUrl}/accounts`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
         try {
             const res = await fetch(url, {
                 method: "GET",
@@ -274,7 +436,7 @@ class CTraderService {
                 String(err?.message || "").toLowerCase().includes("aborted");
             return {
                 ok: false,
-                error: isAbort ? `accounts_timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)),
+                error: isAbort ? `accounts_timeout_after_${this.requestTimeoutMs}ms` : (err?.message ?? String(err)),
             };
         }
         finally {
@@ -310,7 +472,25 @@ class CTraderService {
                 return "MARKET_RANGE";
             return "MARKET";
         };
+        const normalizeExecutionMode = (v) => {
+            const s = String(v ?? "").trim().toUpperCase();
+            return s === "AMEND_SLTP" ? "AMEND_SLTP" : "OPEN";
+        };
+        const optBool = (v) => {
+            if (v === undefined || v === null || v === "")
+                return undefined;
+            if (typeof v === "boolean")
+                return v;
+            const text = String(v).trim().toLowerCase();
+            if (text === "true" || text === "1")
+                return true;
+            if (text === "false" || text === "0")
+                return false;
+            return undefined;
+        };
+        const firstDefined = (...values) => values.find((value) => value !== undefined);
         try {
+            const tradeSignalId = Number(data?.id ?? data?.tradeSignalId ?? data?.jobId);
             const userId = String(data?.userId ?? data?.user_id ?? data?.brokerJob?.userId ?? "").trim();
             if (!userId)
                 return { ok: false, error: "missing_userId_in_signal_data" };
@@ -326,50 +506,178 @@ class CTraderService {
             if (!accessToken)
                 return { ok: false, error: "missing_accessToken_in_signal_data" };
             const refreshToken = String(data?.refreshToken ?? data?.refresh_token ?? "").trim() || undefined;
-            const symbol = String(data?.symbol ?? "").trim();
-            if (!symbol)
-                return { ok: false, error: "missing_symbol_in_signal_data" };
-            const side = normalizeSide(data?.side ?? data?.action ?? data?.signalSide) ??
-                normalizeSide(String(data?.action ?? "").toLowerCase() === "buy"
-                    ? "BUY"
-                    : String(data?.action ?? "").toLowerCase() === "sell"
-                        ? "SELL"
-                        : data?.action);
-            if (!side)
-                return { ok: false, error: "invalid_side_expected_buy_or_sell" };
-            const orderType = normalizeOrderType(data?.orderType);
-            const volumeUnits = Number(data?.volumeUnits ?? data?.qty ?? data?.lots ?? 1000);
-            if (!Number.isFinite(volumeUnits) || volumeUnits <= 0) {
-                return { ok: false, error: "invalid_volumeUnits" };
-            }
-            const limitPrice = data?.limitPrice !== undefined ? Number(data.limitPrice) : undefined;
-            const stopPrice = data?.stopPrice !== undefined ? Number(data.stopPrice) : undefined;
-            const stopLoss = data?.stopLoss !== undefined ? Number(data.stopLoss) : undefined;
-            const takeProfit = data?.takeProfit !== undefined ? Number(data.takeProfit) : undefined;
-            const stopLossDistance = data?.stopLossDistance !== undefined ? Number(data.stopLossDistance) : undefined;
-            const takeProfitDistance = data?.takeProfitDistance !== undefined ? Number(data.takeProfitDistance) : undefined;
+            const executionMode = normalizeExecutionMode(data?.executionMode);
+            const entryRef = String(data?.entryRef ?? "").trim() || undefined;
+            const stopLoss = data?.stopLoss !== undefined && data?.stopLoss !== null
+                ? Number(data.stopLoss)
+                : undefined;
+            const takeProfit = data?.takeProfit !== undefined && data?.takeProfit !== null
+                ? Number(data.takeProfit)
+                : undefined;
+            const stopLossDistance = data?.stopLossDistance !== undefined && data?.stopLossDistance !== null
+                ? Number(data.stopLossDistance)
+                : undefined;
+            const takeProfitDistance = data?.takeProfitDistance !== undefined && data?.takeProfitDistance !== null
+                ? Number(data.takeProfitDistance)
+                : undefined;
+            const stopLossAmount = data?.stopLossAmount !== undefined && data?.stopLossAmount !== null
+                ? Number(data.stopLossAmount)
+                : undefined;
+            const takeProfitAmount = data?.takeProfitAmount !== undefined && data?.takeProfitAmount !== null
+                ? Number(data.takeProfitAmount)
+                : undefined;
+            const limitPrice = data?.limitPrice !== undefined && data?.limitPrice !== null
+                ? Number(data.limitPrice)
+                : undefined;
+            const stopPrice = data?.stopPrice !== undefined && data?.stopPrice !== null
+                ? Number(data.stopPrice)
+                : undefined;
+            const trailingStopLoss = optBool(data?.trailingStopLoss);
+            const guaranteedStopLoss = optBool(data?.guaranteedStopLoss);
+            const stopLossTriggerMethod = String(data?.stopLossTriggerMethod ?? "").trim() || undefined;
+            const trailingTakeProfitActivationDistance = data?.trailingTakeProfitActivationDistance !== undefined &&
+                data?.trailingTakeProfitActivationDistance !== null
+                ? Number(data.trailingTakeProfitActivationDistance)
+                : undefined;
+            const trailingTakeProfitDistance = data?.trailingTakeProfitDistance !== undefined &&
+                data?.trailingTakeProfitDistance !== null
+                ? Number(data.trailingTakeProfitDistance)
+                : undefined;
+            const breakEvenActivationRaw = firstDefined(data?.breakEvenActivationDistance, data?.breakEvenAfterPips, data?.moveStopLossToBreakEvenAfterPips);
+            const breakEvenOffsetRaw = firstDefined(data?.breakEvenOffsetDistance, data?.breakEvenOffsetPips);
+            const trailingStopLossDistanceRaw = firstDefined(data?.trailingStopLossDistance, data?.trailingStopDistancePips);
+            const breakEvenActivationDistance = breakEvenActivationRaw !== undefined && breakEvenActivationRaw !== null
+                ? Number(breakEvenActivationRaw)
+                : undefined;
+            const breakEvenOffsetDistance = breakEvenOffsetRaw !== undefined && breakEvenOffsetRaw !== null
+                ? Number(breakEvenOffsetRaw)
+                : undefined;
+            const trailingStopLossDistance = trailingStopLossDistanceRaw !== undefined && trailingStopLossDistanceRaw !== null
+                ? Number(trailingStopLossDistanceRaw)
+                : undefined;
             const comment = String(data?.comment ?? "").trim() ||
-                `tradeSignalId=${data?.id ?? data?.tradeSignalId ?? ""} jobId=${data?.jobId ?? data?.brokerJob?.id ?? ""}`.trim();
-            const label = String(data?.label ?? "").trim() || "signal-exec";
-            const payloadBase = {
-                userId,
-                symbol,
-                side,
-                orderType,
-                volumeUnits,
-                ...(limitPrice !== undefined ? { limitPrice } : {}),
-                ...(stopPrice !== undefined ? { stopPrice } : {}),
-                ...(stopLoss !== undefined ? { stopLoss } : {}),
-                ...(takeProfit !== undefined ? { takeProfit } : {}),
-                ...(stopLossDistance !== undefined ? { stopLossDistance } : {}),
-                ...(takeProfitDistance !== undefined ? { takeProfitDistance } : {}),
-                ...(comment ? { comment } : {}),
-                ...(label ? { label } : {}),
-            };
+                [
+                    entryRef ? `entryRef=${entryRef}` : "",
+                    tradeSignalId ? `tradeSignalId=${tradeSignalId}` : "",
+                    data?.jobId ? `jobId=${data.jobId}` : "",
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .trim();
+            const label = String(data?.label ?? "").trim() || entryRef || "signal-exec";
+            let payloadBase;
+            if (executionMode === "AMEND_SLTP") {
+                if (!entryRef)
+                    return { ok: false, error: "entry_ref_required_for_amend" };
+                const sourceSignal = await this.db.findLatestOpenSignalByEntryRef(tradingAccountId, entryRef, Number.isFinite(tradeSignalId) ? tradeSignalId : undefined);
+                if (!sourceSignal) {
+                    return { ok: false, error: "amend_target_not_found" };
+                }
+                const brokerOrderId = sourceSignal.brokerOrderId ?? (sourceSignal.orderId != null ? String(sourceSignal.orderId) : null);
+                const brokerPositionId = sourceSignal.brokerPositionId ?? null;
+                const disablesTrailingTakeProfit = stopLoss === undefined &&
+                    takeProfit === undefined &&
+                    trailingTakeProfitActivationDistance === undefined &&
+                    trailingTakeProfitDistance === undefined &&
+                    breakEvenActivationDistance === undefined &&
+                    breakEvenOffsetDistance === undefined &&
+                    trailingStopLossDistance === undefined;
+                const lifecycleTradeSignalId = Number(sourceSignal.id);
+                const sourceSide = normalizeSide(sourceSignal.action);
+                payloadBase = {
+                    userId,
+                    tradingAccountId,
+                    executionMode,
+                    tradeSignalId: Number.isFinite(lifecycleTradeSignalId)
+                        ? lifecycleTradeSignalId
+                        : tradeSignalId,
+                    entryRef,
+                    symbol: String(sourceSignal.symbol ?? "").trim() || undefined,
+                    side: sourceSide ?? undefined,
+                    ...(brokerOrderId ? { orderId: brokerOrderId } : {}),
+                    ...(brokerPositionId ? { positionId: brokerPositionId } : {}),
+                    ...(stopLoss !== undefined ? { stopLoss } : {}),
+                    ...(takeProfit !== undefined ? { takeProfit } : {}),
+                    ...(trailingStopLoss !== undefined ? { trailingStopLoss } : {}),
+                    ...(guaranteedStopLoss !== undefined ? { guaranteedStopLoss } : {}),
+                    ...(stopLossTriggerMethod ? { stopLossTriggerMethod } : {}),
+                    ...(trailingTakeProfitActivationDistance !== undefined
+                        ? { trailingTakeProfitActivationDistance }
+                        : {}),
+                    ...(trailingTakeProfitDistance !== undefined ? { trailingTakeProfitDistance } : {}),
+                    ...(breakEvenActivationDistance !== undefined
+                        ? { breakEvenActivationDistance }
+                        : {}),
+                    ...(breakEvenOffsetDistance !== undefined ? { breakEvenOffsetDistance } : {}),
+                    ...(trailingStopLossDistance !== undefined ? { trailingStopLossDistance } : {}),
+                    ...(disablesTrailingTakeProfit
+                        ? {
+                            trailingTakeProfitActivationDistance: null,
+                            trailingTakeProfitDistance: null,
+                        }
+                        : {}),
+                    ...(comment ? { comment } : {}),
+                };
+            }
+            else {
+                const symbol = String(data?.symbol ?? "").trim();
+                if (!symbol)
+                    return { ok: false, error: "missing_symbol_in_signal_data" };
+                const side = normalizeSide(data?.side ?? data?.action ?? data?.signalSide) ??
+                    normalizeSide(String(data?.action ?? "").toLowerCase() === "buy"
+                        ? "BUY"
+                        : String(data?.action ?? "").toLowerCase() === "sell"
+                            ? "SELL"
+                            : data?.action);
+                if (!side)
+                    return { ok: false, error: "invalid_side_expected_buy_or_sell" };
+                const orderType = normalizeOrderType(data?.orderType);
+                const volumeUnitsRaw = Number(data?.volumeUnits ?? data?.qty);
+                const volumeLotsRaw = Number(data?.volumeLots ?? data?.lots ?? data?.volume);
+                const hasVolumeUnits = Number.isFinite(volumeUnitsRaw) && volumeUnitsRaw > 0;
+                const hasVolumeLots = Number.isFinite(volumeLotsRaw) && volumeLotsRaw > 0;
+                if (!hasVolumeUnits && !hasVolumeLots) {
+                    return { ok: false, error: "invalid_volume_expected_units_or_lots" };
+                }
+                payloadBase = {
+                    userId,
+                    tradingAccountId,
+                    executionMode,
+                    tradeSignalId,
+                    entryRef,
+                    symbol,
+                    side,
+                    orderType,
+                    ...(hasVolumeUnits ? { volumeUnits: volumeUnitsRaw } : {}),
+                    ...(hasVolumeLots ? { volumeLots: volumeLotsRaw } : {}),
+                    ...(limitPrice !== undefined ? { limitPrice } : {}),
+                    ...(stopPrice !== undefined ? { stopPrice } : {}),
+                    ...(stopLoss !== undefined ? { stopLoss } : {}),
+                    ...(takeProfit !== undefined ? { takeProfit } : {}),
+                    ...(stopLossDistance !== undefined ? { stopLossDistance } : {}),
+                    ...(takeProfitDistance !== undefined ? { takeProfitDistance } : {}),
+                    ...(stopLossAmount !== undefined ? { stopLossAmount } : {}),
+                    ...(takeProfitAmount !== undefined ? { takeProfitAmount } : {}),
+                    ...(trailingStopLoss !== undefined ? { trailingStopLoss } : {}),
+                    ...(guaranteedStopLoss !== undefined ? { guaranteedStopLoss } : {}),
+                    ...(stopLossTriggerMethod ? { stopLossTriggerMethod } : {}),
+                    ...(trailingTakeProfitActivationDistance !== undefined
+                        ? { trailingTakeProfitActivationDistance }
+                        : {}),
+                    ...(trailingTakeProfitDistance !== undefined ? { trailingTakeProfitDistance } : {}),
+                    ...(breakEvenActivationDistance !== undefined
+                        ? { breakEvenActivationDistance }
+                        : {}),
+                    ...(breakEvenOffsetDistance !== undefined ? { breakEvenOffsetDistance } : {}),
+                    ...(trailingStopLossDistance !== undefined ? { trailingStopLossDistance } : {}),
+                    ...(comment ? { comment } : {}),
+                    ...(label ? { label } : {}),
+                };
+            }
             const envHeader = this.resolveGatewayEnv(data);
             const callGateway = async (token) => {
                 const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+                const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
                 try {
                     const resolved = await this.resolveGatewayAccountId(userId, accountId, token, envHeader);
                     if (!resolved.ok) {
@@ -392,6 +700,16 @@ class CTraderService {
                         ...payloadBase,
                         accountId: resolvedAccountId,
                     };
+                    console.log("[CTRADER->GATEWAY] open_trade_request", {
+                        url,
+                        userId,
+                        env: envHeader ?? null,
+                        tradingAccountId,
+                        requestedAccountId: accountId,
+                        resolvedAccountId,
+                        tradeSignalId: Number.isFinite(tradeSignalId) ? tradeSignalId : null,
+                        payload,
+                    });
                     const res = await fetch(url, {
                         method: "POST",
                         headers: {
@@ -404,6 +722,16 @@ class CTraderService {
                         body: JSON.stringify(payload),
                         signal: controller.signal,
                     });
+                    console.log("[CTRADER->GATEWAY] open_trade_response", {
+                        url,
+                        userId,
+                        env: envHeader ?? null,
+                        tradingAccountId,
+                        resolvedAccountId,
+                        tradeSignalId: Number.isFinite(tradeSignalId) ? tradeSignalId : null,
+                        status: res.status,
+                        ok: res.ok,
+                    });
                     let body = null;
                     const ct = res.headers.get("content-type") ?? "";
                     try {
@@ -414,21 +742,34 @@ class CTraderService {
                     const isProtoError = responsePayload?.payloadType === "PROTO_OA_ERROR_RES" ||
                         body?.payloadType === "PROTO_OA_ERROR_RES";
                     const ok = res.ok && !isProtoError && !body?.error;
-                    const orderId = responsePayload?.order?.orderId ??
+                    const orderId = this.toPositiveBrokerRef(body?.orderId ??
+                        responsePayload?.order?.orderId ??
                         responsePayload?.orderId ??
-                        body?.orderId;
-                    const positionId = responsePayload?.position?.positionId ??
+                        responsePayload?.deal?.orderId);
+                    const positionId = this.toPositiveBrokerRef(body?.positionId ??
+                        responsePayload?.position?.positionId ??
                         responsePayload?.deal?.positionId ??
-                        responsePayload?.order?.positionId ??
-                        body?.positionId;
+                        responsePayload?.order?.positionId);
                     const authError = this.isGatewayTokenAuthError(res.status, body, isProtoError ? String(responsePayload?.description ?? "") : undefined);
+                    const hasUsableBrokerRef = positionId !== undefined || orderId !== undefined;
+                    const missingOpenRefs = executionMode !== "AMEND_SLTP" &&
+                        ok &&
+                        !hasUsableBrokerRef;
                     return {
-                        ok,
+                        ok: missingOpenRefs ? false : ok,
                         status: res.status,
                         payload: body,
                         ...(orderId !== undefined ? { orderId } : {}),
                         ...(positionId !== undefined ? { positionId } : {}),
-                        ...(ok ? {} : { error: isProtoError ? "ctrader_proto_error_res" : `exec_failed status=${res.status}` }),
+                        ...((missingOpenRefs || !ok)
+                            ? {
+                                error: missingOpenRefs
+                                    ? "execution_missing_broker_refs"
+                                    : isProtoError
+                                        ? "ctrader_proto_error_res"
+                                        : `exec_failed status=${res.status}`,
+                            }
+                            : {}),
                         ...(authError ? { authError: true } : {}),
                     };
                 }
@@ -437,7 +778,7 @@ class CTraderService {
                         String(err?.message || "").toLowerCase().includes("aborted");
                     return {
                         ok: false,
-                        error: isAbort ? `timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)),
+                        error: isAbort ? `timeout_after_${this.requestTimeoutMs}ms` : (err?.message ?? String(err)),
                     };
                 }
                 finally {
@@ -479,7 +820,7 @@ class CTraderService {
                 String(err?.message || "").toLowerCase().includes("aborted");
             return {
                 ok: false,
-                error: isAbort ? `timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)),
+                error: isAbort ? `timeout_after_${this.requestTimeoutMs}ms` : (err?.message ?? String(err)),
             };
         }
     }
@@ -514,7 +855,7 @@ class CTraderService {
             const envHeader = this.resolveGatewayEnv(data);
             const callGateway = async (token) => {
                 const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+                const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
                 try {
                     const resolved = await this.resolveGatewayAccountId(userId, accountId, token, envHeader);
                     if (!resolved.ok) {
@@ -537,6 +878,16 @@ class CTraderService {
                         ...payloadBase,
                         accountId: resolvedAccountId,
                     };
+                    console.log("[CTRADER->GATEWAY] close_trade_request", {
+                        url,
+                        userId,
+                        env: envHeader ?? null,
+                        tradingAccountId,
+                        requestedAccountId: accountId,
+                        resolvedAccountId,
+                        orderId,
+                        payload,
+                    });
                     const res = await fetch(url, {
                         method: "POST",
                         headers: {
@@ -548,6 +899,16 @@ class CTraderService {
                         },
                         body: JSON.stringify(payload),
                         signal: controller.signal,
+                    });
+                    console.log("[CTRADER->GATEWAY] close_trade_response", {
+                        url,
+                        userId,
+                        env: envHeader ?? null,
+                        tradingAccountId,
+                        resolvedAccountId,
+                        orderId,
+                        status: res.status,
+                        ok: res.ok,
                     });
                     let body = null;
                     const ct = res.headers.get("content-type") ?? "";
@@ -572,7 +933,7 @@ class CTraderService {
                         String(err?.message || "").toLowerCase().includes("aborted");
                     return {
                         ok: false,
-                        error: isAbort ? `timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)),
+                        error: isAbort ? `timeout_after_${this.requestTimeoutMs}ms` : (err?.message ?? String(err)),
                     };
                 }
                 finally {
@@ -614,7 +975,7 @@ class CTraderService {
                 String(err?.message || "").toLowerCase().includes("aborted");
             return {
                 ok: false,
-                error: isAbort ? `timeout_after_${this.timeoutMs}ms` : (err?.message ?? String(err)),
+                error: isAbort ? `timeout_after_${this.requestTimeoutMs}ms` : (err?.message ?? String(err)),
             };
         }
     }
@@ -635,14 +996,32 @@ class CTraderService {
             const closeRefId = execRes.positionId ?? execRes.orderId;
             //console.log("[CTRADER] Trade signal result:", { tradeSignalId: t.id, positionId: execRes.positionId, orderId: execRes.orderId });
             if (execRes.ok) {
-                updates.push({ id: t.id, status: "executed", ...(closeRefId !== undefined ? { orderId: closeRefId } : {}) });
+                updates.push({
+                    id: t.id,
+                    status: "executed",
+                    ...(closeRefId !== undefined ? { orderId: closeRefId } : {}),
+                    ...(execRes.orderId !== undefined ? { brokerOrderId: execRes.orderId } : {}),
+                    ...(execRes.positionId !== undefined ? { brokerPositionId: execRes.positionId } : {}),
+                });
             }
             else {
-                updates.push({ id: t.id, status: "failed" });
+                const nextStatus = this.isTransientExecutionFailure(execRes) ? "retry_pending" : "failed";
+                updates.push({
+                    id: t.id,
+                    status: nextStatus,
+                    error: execRes.error,
+                    ...(nextStatus === "retry_pending"
+                        ? {
+                            maxRetryAttempts: this.maxRetryAttempts,
+                            retryBaseDelayMs: this.retryBaseDelayMs,
+                        }
+                        : {}),
+                });
                 console.error("[CTRADER] EXEC FAILED", {
                     tradeSignalId: t.id,
                     error: execRes.error,
                     payload: execRes.payload,
+                    nextStatus,
                 });
             }
         }
@@ -666,11 +1045,23 @@ class CTraderService {
                 updates.push({ id: signal.id, status: "closed" });
             }
             else {
-                updates.push({ id: signal.id, status: "failed" });
+                const nextStatus = this.isTransientExecutionFailure(closeRes) ? "retry_pending_close" : "failed";
+                updates.push({
+                    id: signal.id,
+                    status: nextStatus,
+                    error: closeRes.error,
+                    ...(nextStatus === "retry_pending_close"
+                        ? {
+                            maxRetryAttempts: this.maxRetryAttempts,
+                            retryBaseDelayMs: this.retryBaseDelayMs,
+                        }
+                        : {}),
+                });
                 console.error("[CTRADER] CLOSE FAILED", {
                     signalId: signal.id,
                     error: closeRes.error,
                     payload: closeRes.payload,
+                    nextStatus,
                 });
             }
         }
@@ -713,6 +1104,7 @@ class CTraderService {
                 return { ok: false, status: 500, error: "invalid_userId_on_account" };
             }
             const tokens = await this.exchangeCodeDirect(oauthCode);
+            await this.rebindAccountToActiveSubscription(qr, acc, broker);
             acc.accessToken = tokens.accessToken;
             acc.refreshToken = tokens.refreshToken ?? acc.refreshToken ?? "";
             acc.status = subscriberPlan_enum_1.TradingAccountStatus.VERIFIED;

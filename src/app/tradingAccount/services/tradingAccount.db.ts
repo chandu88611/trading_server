@@ -1,4 +1,5 @@
 // src/app/tradingAccount/services/tradingAccount.db.ts
+import crypto from "crypto";
 import AppDataSource from "../../../db/data-source";
 import { UserTradingAccount } from "../../../entity/UserTradingAccount";
 import { User } from "../../../entity/User";
@@ -6,17 +7,44 @@ import { HttpStatusCode } from "../../../types/constants";
 import { In, QueryRunner } from "typeorm";
 import { SubscriptionStatus, TradingAccountStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
 import { CopyTradingMaster } from "../../../entity/CopyTradingMaster";
-import { errorHandler } from "../../../types/error-handler";
 import { CopyFollowStatus, CopyTradingFollowers } from "../../../entity/CopyTradingFollow";
-import { Broker, SubscriptionPlan, UserSubscription } from "../../../entity";
-import { subscribe } from "diagnostics_channel";
+import { Broker, UserSubscription } from "../../../entity";
 import { Market } from "../../../entity/Market";
+
+export type TradingAccountExecutionTarget = {
+  userId: number;
+  id: number;
+};
+
+export type StrategyExecutionResolution = {
+  accounts: TradingAccountExecutionTarget[];
+  eligibleOwnedAccountIds: number[];
+  masterAccountIds: number[];
+  followerAccountIds: number[];
+};
 
 export class TradingAccountDBService {
   private repo = AppDataSource.getRepository(UserTradingAccount);
-  private brokerRepo = AppDataSource.getRepository(Broker);
   private copyTradingRepo = AppDataSource.getRepository(CopyTradingMaster);
   private copyTradingFollowersRepo = AppDataSource.getRepository(CopyTradingFollowers);
+
+  /** Returns ALL accounts for a user regardless of plan — used by GET /trading-accounts/me */
+  async listAllByUser(userId: number) {
+    try {
+      const data = await this.repo.find({
+        where: { userId },
+        order: { createdAt: "DESC" },
+        relations: ["broker"],
+      });
+      return data;
+    } catch (error) {
+      throw {
+        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
+        message: "database_error_listing_accounts",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
   async listByUser(userId: number, planId: number) {
     try {
@@ -69,6 +97,7 @@ export class TradingAccountDBService {
 
   async alreadyMasterAccountExists(userId: number, marketCategory: string, isMaster: boolean, accountId: string | null, queryRunner: QueryRunner) {
     try {
+      
       const existing = await queryRunner.manager
         .createQueryBuilder(UserTradingAccount, "account")
         .leftJoinAndSelect("account.broker", "broker")
@@ -141,11 +170,16 @@ export class TradingAccountDBService {
         }
       }
       let subscriberPlanId = await this.getSubscriptionIdForAccount(userId, brokerId.marketCategory,queryRunner);
-      let accountId = payload.accountLabel?.split("•").pop()?.trim() ?? null;
-      await this.alreadyMasterAccountExists(userId, brokerId.marketCategory, payload.isMaster ?? false, accountId, queryRunner);
+      let accountId = payload.broker === "DHAN" || payload.broker === "ZEBU" ? payload.accountId : payload.accountLabel?.split("•").pop()?.trim() ?? null;
+      await this.alreadyMasterAccountExists(userId, brokerId.marketCategory, payload.isMaster ?? false, accountId as string, queryRunner);
       console.log("Creating trading account for user with runner", { userId, payload });
       
       console.log("Extracted accountId", { accountId });
+      // MT5 accounts get a cryptographically-random poll key that the EA must
+      // send as X-Poll-Key on every request to authenticate.
+      const mt5PollKey =
+        brokerCode === "MT5" ? crypto.randomBytes(32).toString("hex") : null;
+
       const acc = queryRunner.manager.create(UserTradingAccount, {
         userId,
         brokerId: brokerId?.id ?? null,
@@ -156,6 +190,7 @@ export class TradingAccountDBService {
         credentialsEncrypted: payload.credentialsEncrypted ?? "",
         status: TradingAccountStatus.PENDING,
         subscriptionId: subscriberPlanId,
+        ...(mt5PollKey ? { mt5PollKey } : {}),
       } as any);
       return await queryRunner.manager.save(acc);
     } catch (error) {
@@ -257,6 +292,7 @@ export class TradingAccountDBService {
 
   async getActiveMasterAccountCopyAndFollowing(userId: number, brokerIds: number[]) {
     try {
+      console.log("BROKER IDS::: ",brokerIds)
       const itemData = await this.repo.find({
         where: {
           userId: userId,
@@ -266,16 +302,16 @@ export class TradingAccountDBService {
           isEnabled: true,
         },
       });
+      console.log("Fetched master accounts for user and broker IDs", { userId, brokerIds, itemData });
+
       if (!itemData || itemData.length === 0) {
-        throw {
-          statusCode: HttpStatusCode._NOT_FOUND,
-          message: "no_active_master_account_found",
-        };
+        return [];
       }
       let copyTradingData: {
         userId: number;
         id: number;
       }[] = await this.getAllCopyTradingAccounts(itemData.map(item => item.id));
+      console.log("Fetched active master accounts and their copy trading followers", {itemData, userId, brokerIds, masterAccountsCount: itemData.length, copyTradingAccountsCount: copyTradingData.length });
       return [...copyTradingData, ...itemData.map(item => ({ userId: item.userId, id: item.id }))];
     } catch (error) {
       throw error
@@ -304,6 +340,64 @@ export class TradingAccountDBService {
       throw error
     }
   }
+
+  async resolveStrategyExecutionTargets(
+    userId: number,
+    subscriptionId: number,
+    brokerIds: number[],
+  ): Promise<StrategyExecutionResolution> {
+    try {
+      const ownedAccounts = await this.repo.find({
+        where: {
+          userId,
+          subscriptionId,
+          brokerId: In(brokerIds),
+          status: TradingAccountStatus.VERIFIED,
+          isEnabled: true,
+        },
+      });
+
+      const eligibleOwnedAccountIds = ownedAccounts.map((account) => Number(account.id));
+      const masterAccountIds = ownedAccounts
+        .filter((account) => Boolean(account.isMaster))
+        .map((account) => Number(account.id));
+
+      const followerAccounts =
+        masterAccountIds.length > 0
+          ? await this.getAllCopyTradingAccounts(masterAccountIds)
+          : [];
+      const followerAccountIds = followerAccounts.map((account) => Number(account.id));
+
+      const deduped = new Map<number, TradingAccountExecutionTarget>();
+
+      for (const account of ownedAccounts) {
+        deduped.set(Number(account.id), {
+          userId: Number(account.userId),
+          id: Number(account.id),
+        });
+      }
+
+      for (const account of followerAccounts) {
+        const accountId = Number(account.id);
+        if (!deduped.has(accountId)) {
+          deduped.set(accountId, {
+            userId: Number(account.userId),
+            id: accountId,
+          });
+        }
+      }
+
+      return {
+        accounts: Array.from(deduped.values()),
+        eligibleOwnedAccountIds,
+        masterAccountIds,
+        followerAccountIds,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async getMasterId({UserTradingAccountId, userId, queryRunner}: {UserTradingAccountId: number, userId: number, queryRunner: QueryRunner}) {
     try {
       let accountDetails = await queryRunner.manager.findOne(UserTradingAccount, { where: { id: UserTradingAccountId }, relations: ['broker'] });

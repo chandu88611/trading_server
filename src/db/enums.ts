@@ -41,10 +41,32 @@ export type ClaimedSignal = {
   action: string;
   symbol: string;
   price: string | number;
+  volume?: string | number | null;
   exchange: string;
   assetType: string;
   signalTime: string;
-  userId: number; 
+  userId: number;
+  executionMode?: "OPEN" | "AMEND_SLTP" | null;
+  entryRef?: string | null;
+  orderType?: string | null;
+  limitPrice?: string | number | null;
+  stopPrice?: string | number | null;
+  stopLoss?: string | number | null;
+  takeProfit?: string | number | null;
+  stopLossDistance?: string | number | null;
+  takeProfitDistance?: string | number | null;
+  stopLossAmount?: string | number | null;
+  takeProfitAmount?: string | number | null;
+  trailingStopLoss?: boolean | null;
+  guaranteedStopLoss?: boolean | null;
+  stopLossTriggerMethod?: string | null;
+  trailingTakeProfitActivationDistance?: string | number | null;
+  trailingTakeProfitDistance?: string | number | null;
+  breakEvenActivationDistance?: string | number | null;
+  breakEvenOffsetDistance?: string | number | null;
+  trailingStopLossDistance?: string | number | null;
+  brokerOrderId?: string | number | null;
+  brokerPositionId?: string | number | null;
 };
 
 export type OAuthExchangeResult = {

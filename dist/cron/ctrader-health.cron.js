@@ -7,7 +7,8 @@ const node_cron_1 = __importDefault(require("node-cron"));
 const cTrader_1 = require("../app/cTraderListener/services/cTrader");
 const ctrader = new cTrader_1.CTraderService({
     baseUrl: process.env.CTRADER_GATEWAY_URL,
-    timeoutMs: Number(process.env.CTRADER_HEALTH_TIMEOUT_MS ?? 5000),
+    healthTimeoutMs: Number(process.env.CTRADER_HEALTH_TIMEOUT_MS ?? 5000),
+    requestTimeoutMs: Number(process.env.CTRADER_EXEC_TIMEOUT_MS ?? process.env.CTRADER_REQUEST_TIMEOUT_MS ?? 15000),
 });
 node_cron_1.default.schedule("*/1 * * * *", async () => {
     const r = await ctrader.checkConnection();

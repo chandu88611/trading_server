@@ -51,9 +51,48 @@ class TradingAccountService {
             return userTradingAccounts;
         }
         catch (error) {
+            const statusCode = Number(error?.statusCode ?? 0);
+            const message = String(error?.message ?? "");
+            if (statusCode === constants_1.HttpStatusCode._NOT_FOUND || message === "no_active_master_account_found") {
+                return [];
+            }
+            const errMsg = error instanceof Error
+                ? error.message
+                : typeof error?.message === "string"
+                    ? error.message
+                    : String(error);
             throw {
                 statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
                 message: "failed_to_list_copy_trading_accounts",
+                error: errMsg,
+            };
+        }
+    }
+    async resolveStrategyExecutionTargets(userId, subscriptionId, brokerIds) {
+        try {
+            return await this.db.resolveStrategyExecutionTargets(userId, subscriptionId, brokerIds);
+        }
+        catch (error) {
+            const errMsg = error instanceof Error
+                ? error.message
+                : typeof error?.message === "string"
+                    ? error.message
+                    : String(error);
+            throw {
+                statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
+                message: "failed_to_resolve_strategy_execution_targets",
+                error: errMsg,
+            };
+        }
+    }
+    async listAllMyAccounts(userId) {
+        try {
+            return await this.db.listAllByUser(userId);
+        }
+        catch (error) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
+                message: "failed_to_list_trading_accounts",
                 error: error instanceof Error ? error.message : String(error),
             };
         }

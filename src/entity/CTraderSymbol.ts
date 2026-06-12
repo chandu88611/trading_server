@@ -28,6 +28,24 @@ export class CTraderSymbol {
   @Column({ name: "symbol_id", type: "integer" })
   symbolId!: number;
 
+  @Column({ name: "lot_size", type: "bigint", nullable: true })
+  lotSize!: string | null;
+
+  @Column({ name: "digits", type: "integer", nullable: true })
+  digits!: number | null;
+
+  @Column({ name: "pip_position", type: "integer", nullable: true })
+  pipPosition!: number | null;
+
+  @Column({ name: "sl_distance", type: "integer", nullable: true })
+  slDistance!: number | null;
+
+  @Column({ name: "tp_distance", type: "integer", nullable: true })
+  tpDistance!: number | null;
+
+  @Column({ name: "distance_set_in", type: "varchar", length: 40, nullable: true })
+  distanceSetIn!: string | null;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

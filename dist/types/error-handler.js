@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ControllerError = ControllerError;
 exports.errorHandler = errorHandler;
@@ -23,6 +56,30 @@ class ErrorResponder {
                 .status(constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR)
                 .json({ message: constants_1.ErrorMessage.INTERNAL_SERVER_ERROR });
         }
+    }
+}
+async function logErrorEvent(req, err) {
+    try {
+        const statusCode = err.statusCode ?? constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR;
+        const { default: AppDataSource } = await Promise.resolve().then(() => __importStar(require("../db/data-source")));
+        if (!AppDataSource.isInitialized)
+            return;
+        await AppDataSource.query(`
+      INSERT INTO error_events(service, severity, message, stack, route, method, actor_user_id, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      `, [
+            "trading_server",
+            statusCode >= 500 ? "error" : "warn",
+            String(err.message ?? constants_1.ErrorMessage.INTERNAL_SERVER_ERROR),
+            err.stack ?? null,
+            req.originalUrl ?? req.path,
+            req.method,
+            Number(req.auth?.userId) || null,
+            JSON.stringify({ statusCode, data: err.data ?? null }),
+        ]);
+    }
+    catch (_error) {
+        // Error logging is diagnostic only; never mask the original controller response.
     }
 }
 /**
@@ -52,6 +109,7 @@ function ControllerError() {
                 }
                 // eslint-disable-next-line no-console
                 console.error("Controller error caught", rawErr);
+                void logErrorEvent(req, rawErr);
                 ErrorResponder.respond(res, rawErr);
             }
         };
@@ -78,6 +136,7 @@ function errorHandler(fn) {
             }
             // eslint-disable-next-line no-console
             console.error("Middleware caught error", err);
+            void logErrorEvent(req, err);
             ErrorResponder.respond(res, err);
         }
     };

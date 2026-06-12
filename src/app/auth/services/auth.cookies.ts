@@ -1,8 +1,6 @@
 // src/app/auth/utils/auth.cookies.ts
 import { Response } from "express";
 
-const isProd = process.env.NODE_ENV === "production";
-
 export const COOKIE_NAMES = {
   access: "access_token",
   refresh: "refresh_token",
@@ -16,10 +14,10 @@ export function setAuthCookies(res: Response, accessJwt: string, refreshJwt: str
     path: "/",
   };
 
-  // access token short ttl (example 15m)
+  // access token ttl matches backend JWT lifetime
   res.cookie(COOKIE_NAMES.access, accessJwt, {
     ...common,
-    maxAge: 1000 * 60 * 15,
+    maxAge: 1000 * 60 * 60 * 24 * 30,
   });
 
   // refresh token longer ttl (example 15 days)

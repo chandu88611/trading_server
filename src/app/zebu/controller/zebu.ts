@@ -2,12 +2,13 @@ import { Request, Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
 import { HttpStatusCode } from "../../../types/constants";
 import { ZebuService } from "../services/zebu.service";
+import { Roles } from "../../../middleware/auth";
 
 export class ZebuController {
 	private service = new ZebuService();
 
 	private requireUserId(req: Request): number {
-		const userId = Number((req as any)?.auth?.userId ?? (req.body as any)?.userId ?? (req.query as any)?.userId);
+		const userId = Number((req as any)?.auth?.userId);
 		if (!Number.isFinite(userId) || userId <= 0) {
 			throw { statusCode: HttpStatusCode._UNAUTHORISED, message: "userId_required" };
 		}
@@ -22,28 +23,42 @@ export class ZebuController {
 		return id;
 	}
 
+	private requireAdmin(req: Request) {
+		const roles = ((req as any)?.auth?.roles ?? []) as string[];
+		if (!roles.includes(Roles.ADMIN)) {
+			throw { statusCode: HttpStatusCode._UNAUTHORISED, message: "Admin access required" };
+		}
+	}
+
+	private optionalNumber(value: unknown): number | undefined {
+		if (value === undefined || value === null || value === "") return undefined;
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : undefined;
+	}
+
 	@ControllerError()
 	async saveToken(req: Request, res: Response) {
 		const userId = this.requireUserId(req);
 		const tradingAccountId = this.requireTradingAccountId(req);
 
 		const accessToken = String((req.body as any)?.accessToken ?? "").trim();
-		
 		const apiKey = String((req.body as any)?.apiKey ?? "").trim() || undefined;
+		const baseUrl = String((req.body as any)?.baseUrl ?? process.env.ZEBU_BASE_URL ?? "").trim() || undefined;
+		const uid = String((req.body as any)?.uid ?? (req.body as any)?.clientId ?? "").trim() || undefined;
+		const actid = String((req.body as any)?.actid ?? (req.body as any)?.accountId ?? "").trim() || undefined;
 
 		if (!accessToken) {
 			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "accessToken_required" });
 		}
-		let baseUrl = process.env.ZEBU_BASE_URL ?? "";
-		if(baseUrl === "") {
-			throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "zebu_base_url_not_configured" };
-		}
+
 		const result = await this.service.saveAuthToken({
 			userId,
 			tradingAccountId,
 			accessToken,
 			baseUrl,
 			apiKey,
+			uid,
+			actid,
 		});
 
 		return res.json({ message: "zebu_token_saved", data: result });
@@ -54,21 +69,21 @@ export class ZebuController {
 		const userId = this.requireUserId(req);
 		const tradingAccountId = this.requireTradingAccountId(req);
 		const password = String((req.body as any)?.password ?? "");
-		const totp = String((req.body as any)?.totp ?? "").trim();
+		const factor2 = String((req.body as any)?.factor2 ?? (req.body as any)?.totp ?? "").trim();
 
 		if (!password) {
 			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "password_required" });
 		}
 
-		if (!totp) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "totp_required" });
+		if (!factor2) {
+			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "factor2_required" });
 		}
 
 		const result = await this.service.generateAndSaveTokenUsingTotp({
 			userId,
 			tradingAccountId,
 			password,
-			totp,
+			factor2,
 		});
 
 		return res.json({ message: "zebu_token_generated", data: result });
@@ -107,9 +122,13 @@ export class ZebuController {
 			userId,
 			tradingAccountId,
 			orderId,
-			quantity: (req.body as any)?.quantity,
-			price: (req.body as any)?.price,
-			triggerPrice: (req.body as any)?.triggerPrice,
+			symbol: String((req.body as any)?.symbol ?? "").trim() || undefined,
+			exchange: String((req.body as any)?.exchange ?? "").trim() || undefined,
+			orderType: String((req.body as any)?.orderType ?? "").trim() || undefined,
+			product: String((req.body as any)?.product ?? "").trim() || undefined,
+			quantity: this.optionalNumber((req.body as any)?.quantity),
+			price: this.optionalNumber((req.body as any)?.price),
+			triggerPrice: this.optionalNumber((req.body as any)?.triggerPrice),
 			validity: (req.body as any)?.validity,
 		});
 
@@ -155,7 +174,16 @@ export class ZebuController {
 	}
 
 	@ControllerError()
+	async getFunds(req: Request, res: Response) {
+		const userId = this.requireUserId(req);
+		const tradingAccountId = this.requireTradingAccountId(req);
+		const data = await this.service.getFunds(userId, tradingAccountId);
+		return res.json({ data });
+	}
+
+	@ControllerError()
 	async executePending(req: Request, res: Response) {
+		this.requireAdmin(req);
 		const batchSize = Number((req.body as any)?.batchSize ?? undefined);
 		const data = await this.service.executePendingBatch({
 			batchSize: Number.isFinite(batchSize) ? batchSize : undefined,

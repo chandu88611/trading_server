@@ -49,6 +49,21 @@ export class AssetClassifier {
     "SHARES",
   ]);
   private static readonly FUTURES_MARKETS = new Set(["FUTURES"]);
+  private static readonly INDIAN_MARKETS = new Set(["INDIAN"]);
+  private static readonly INDIAN_EXCHANGES = new Set([
+    "NSE",
+    "BSE",
+    "NSECM",
+    "BSECM",
+    "NSE_EQ",
+    "BSE_EQ",
+    "NSE_DLY",
+    "BSE_DLY",
+    "NFO",
+    "NSE_FNO",
+    "MCX",
+    "MCX_COMM",
+  ]);
 
   /**
    * Exchange families (heuristic). Not "one-off"; these are categories.
@@ -142,6 +157,12 @@ export class AssetClassifier {
   ];
 
   private static readonly INDEX_TOKENS = [
+    "NIFTY",
+    "BANKNIFTY",
+    "FINNIFTY",
+    "MIDCPNIFTY",
+    "SENSEX",
+    "BANKEX",
     "SPX",
     "SP500",
     "NDX",
@@ -301,6 +322,39 @@ export class AssetClassifier {
       );
     }
 
+    // 2b) Indian market/exchange hint (prevents index/equity symbols from falling to UNKNOWN)
+    if (this.INDIAN_MARKETS.has(market) || this.INDIAN_EXCHANGES.has(exchange)) {
+      if (this.looksLikeIndex(symbol)) {
+        return this.cache(
+          cacheKey,
+          this.result(
+            AssetType.INDEX,
+            "market/exchange=indian + index-like",
+            symbol,
+            exchange,
+            market,
+            parsed.base,
+            parsed.quote
+          )
+        );
+      }
+
+      if (/^[A-Z][A-Z0-9]{0,24}$/.test(symbol)) {
+        return this.cache(
+          cacheKey,
+          this.result(
+            AssetType.STOCK,
+            "market/exchange=indian + equity-like",
+            symbol,
+            exchange,
+            market,
+            parsed.base,
+            parsed.quote
+          )
+        );
+      }
+    }
+
     // 3) Symbol heuristics (most important when exchange/market ambiguous)
 
     // 3a) Futures heuristic (optional)
@@ -437,7 +491,7 @@ export class AssetClassifier {
 
     // Remove common separators inside symbol
     // e.g. "BTC/USDT", "BTC-USDT", "BTC_USDT"
-    const clean = symbol.replace(/[\/\-_]/g, "");
+    const clean = symbol.replace(/[^A-Z0-9]/g, "");
     symbol = clean;
 
     // try to split base/quote for pairs (crypto & forex)

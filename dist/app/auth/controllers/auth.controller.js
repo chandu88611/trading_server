@@ -12,12 +12,13 @@ const user_db_1 = require("../../user/services/user.db");
 const auth_1 = require("../../../middleware/auth");
 const token_1 = require("../../../types/token");
 const email_service_1 = require("../../../types/email.service");
-const auth_service_1 = require("../services/auth.service");
+const crmLifecycleSync_service_1 = require("../../integrations/crm/services/crmLifecycleSync.service");
 const userService = new user_service_1.UserService();
 const userDb = new user_db_1.UserDBService();
+const crmLifecycleSyncService = new crmLifecycleSync_service_1.CrmLifecycleSyncService();
 const ACCESS_COOKIE = "access_token";
 const REFRESH_COOKIE = "refresh_token";
-const ACCESS_TTL_MS = 1000 * 60 * 15; // 15 min
+const ACCESS_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days (matches access JWT lifetime)
 const REFRESH_TTL_MS = 1000 * 60 * 60 * 24 * 15; // 15 days
 /**
  * IMPORTANT:
@@ -73,10 +74,13 @@ function logReq(req, label) {
     console.log("[AUTH] cookie header has access?:", rawCookie.includes("access_token="), "has refresh?:", rawCookie.includes("refresh_token="));
     console.log("[AUTH] req.cookies parsed?:", Boolean(req.cookies), "keys:", parsedKeys);
 }
+function serializeAuthRole(user) {
+    return user.isAdmin ? auth_1.Roles.ADMIN : auth_1.Roles.USER;
+}
+function serializeAuthRoles(user) {
+    return user.isAdmin ? [auth_1.Roles.ADMIN, auth_1.Roles.USER] : [auth_1.Roles.USER];
+}
 class AuthController {
-    constructor() {
-        this.authService = new auth_service_1.AuthService();
-    }
     async login(req, res) {
         logReq(req, "LOGIN");
         try {
@@ -91,6 +95,9 @@ class AuthController {
                     id: result.user.id,
                     email: result.user.email,
                     name: result.user.name,
+                    role: serializeAuthRole(result.user),
+                    roles: serializeAuthRoles(result.user),
+                    isAdmin: result.user.isAdmin,
                     access: result.accessToken,
                     refresh: result.refreshToken,
                 },
@@ -104,7 +111,7 @@ class AuthController {
     async google(req, res) {
         logReq(req, "GOOGLE");
         try {
-            const { id_token } = req.body ?? {};
+            const { id_token, referralCode } = req.body ?? {};
             if (!id_token)
                 return res.status(400).json({ message: "id_token required" });
             const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`;
@@ -137,8 +144,11 @@ class AuthController {
                 return res
                     .status(400)
                     .json({ message: "Invalid Google token payload" });
-            const result = await userService.registerWithProvider("google", info.sub, info.email, info.name);
+            const result = await userService.registerWithProvider("google", info.sub, info.email, info.name, false, referralCode);
             setAuthCookies(res, result.accessToken, result.refreshToken);
+            if (result.isNewUser) {
+                void crmLifecycleSyncService.syncUserRegistered(result.user.id);
+            }
             console.log("[AUTH] google login success userId:", result.user.id, "email:", result.user.email);
             return res.status(200).json({
                 message: "Logged in via Google",
@@ -146,13 +156,16 @@ class AuthController {
                     id: result.user.id,
                     email: result.user.email,
                     name: result.user.name,
+                    role: serializeAuthRole(result.user),
+                    roles: serializeAuthRoles(result.user),
+                    isAdmin: result.user.isAdmin,
                 },
             });
         }
         catch (err) {
             console.log("[AUTH] google error:", err?.message);
             return res
-                .status(500)
+                .status(Number(err?.statusCode) || 500)
                 .json({ message: err.message || "Google auth failed" });
         }
     }
@@ -190,7 +203,14 @@ class AuthController {
                 return res.status(401).json({ message: "Unauthorized" });
             }
             return res.json({
-                user: { id: user.id, email: user.email, name: user.name },
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    role: serializeAuthRole(user),
+                    roles: serializeAuthRoles(user),
+                    isAdmin: user.isAdmin,
+                },
             });
         }
         catch (e) {
@@ -213,7 +233,10 @@ class AuthController {
             const tokenRow = await userDb.findRefreshTokenForUser(userId, tokenHash);
             if (!tokenRow || tokenRow.revoked)
                 return res.status(401).json({ message: "Unauthorized" });
-            const newAccess = (0, auth_1.signAccessToken)({ userId, roles: ["USER"] });
+            const refreshedRoles = tokenRow.user?.isAdmin
+                ? [auth_1.Roles.ADMIN, auth_1.Roles.USER]
+                : [auth_1.Roles.USER];
+            const newAccess = (0, auth_1.signAccessToken)({ userId, roles: refreshedRoles });
             const refreshPlain = crypto_1.default.randomBytes(48).toString("hex");
             const newHash = crypto_1.default
                 .createHash("sha256")

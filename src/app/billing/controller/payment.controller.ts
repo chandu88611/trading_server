@@ -1,10 +1,14 @@
 import { Request, Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
 import { RazorpayService } from "../services/razorpay.service";
+import { RazorpayXService } from "../services/razorpayx.service";
 import { BillingDBService } from "../services/billing.db";
 import { SubscriptionPlan } from "../../../entity";
+import { AuthRequest, Roles } from "../../../middleware/auth";
+import { HttpStatusCode } from "../../../types/constants";
 
 const razorpayService = new RazorpayService();
+const razorpayXService = new RazorpayXService();
 const billingDb = new BillingDBService();
 
 function getAuthUserId(req: Request): number {
@@ -13,8 +17,29 @@ function getAuthUserId(req: Request): number {
 }
 
 export class PaymentController {
+  private ensureNonAdmin(req: AuthRequest) {
+    const roles = req.auth?.roles ?? [];
+    if (roles.includes(Roles.ADMIN)) {
+      throw {
+        statusCode: HttpStatusCode._BAD_REQUEST,
+        message: "admin_subscriptions_not_allowed",
+      };
+    }
+  }
+
+  private ensureAdmin(req: AuthRequest) {
+    const roles = req.auth?.roles ?? [];
+    if (!roles.includes(Roles.ADMIN)) {
+      throw {
+        statusCode: HttpStatusCode._UNAUTHORISED,
+        message: "Admin access required",
+      };
+    }
+  }
+
   @ControllerError()
-  async createCheckout(req: Request, res: Response) {
+  async createCheckout(req: AuthRequest, res: Response) {
+    this.ensureNonAdmin(req);
     const userId = getAuthUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
@@ -22,9 +47,12 @@ export class PaymentController {
     if (!planId) return res.status(400).json({ message: "planId required" });
 
     const planRepo = (await import("../../../db/data-source")).default.getRepository(
-      "SubscriptionPlan"
+      SubscriptionPlan
     );
-    const plan = (await planRepo.findOne({ where: { id: planId } })) as SubscriptionPlan;
+    const plan = (await planRepo.findOne({
+      where: { id: planId } as any,
+      relations: { pricing: true } as any,
+    })) as SubscriptionPlan | null;
 
     if (!plan) return res.status(404).json({ message: "Plan not found" });
     if (!(plan as any).isActive) return res.status(400).json({ message: "Plan is inactive" });
@@ -46,7 +74,8 @@ export class PaymentController {
   }
 
   @ControllerError()
-  async verifyPayment(req: Request, res: Response) {
+  async verifyPayment(req: AuthRequest, res: Response) {
+    this.ensureNonAdmin(req);
     const userId = getAuthUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
@@ -89,7 +118,134 @@ export class PaymentController {
   }
 
   @ControllerError()
-  async getCurrentSubscription(req: Request, res: Response) {
+  async getWallet(req: AuthRequest, res: Response) {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const wallet = await billingDb.getWalletSummary(userId);
+    return res.status(200).json({
+      message: "Wallet fetched successfully",
+      data: wallet,
+    });
+  }
+
+  @ControllerError()
+  async listWithdrawals(req: AuthRequest, res: Response) {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const withdrawals = await billingDb.listWithdrawals(userId);
+    return res.status(200).json({
+      message: "Withdrawals fetched successfully",
+      data: withdrawals,
+    });
+  }
+
+  @ControllerError()
+  async createWithdrawal(req: AuthRequest, res: Response) {
+    const userId = getAuthUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { amount } = req.body as { amount?: number };
+    if (typeof amount !== "number" || !Number.isFinite(amount)) {
+      return res.status(400).json({ message: "amount must be a number" });
+    }
+
+    const withdrawal = await billingDb.createWithdrawalRequest(userId, amount);
+    return res.status(201).json({
+      message: "Withdrawal requested",
+      data: withdrawal,
+    });
+  }
+
+  @ControllerError()
+  async listAdminWithdrawals(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const withdrawals = await billingDb.listAdminWithdrawals();
+
+    return res.status(200).json({
+      message: "Admin withdrawals fetched successfully",
+      data: withdrawals,
+    });
+  }
+
+  @ControllerError()
+  async approveWithdrawal(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const adminUserId = getAuthUserId(req);
+    const withdrawalId = Number(req.params.withdrawalId);
+    const notes = String(req.body?.notes ?? "").trim() || null;
+
+    if (!Number.isFinite(withdrawalId) || withdrawalId <= 0) {
+      return res.status(400).json({ message: "Invalid withdrawalId" });
+    }
+
+    const withdrawal = await billingDb.approveWithdrawalRequest(
+      withdrawalId,
+      adminUserId,
+      notes
+    );
+
+    return res.status(200).json({
+      message: "Withdrawal approved",
+      data: withdrawal,
+    });
+  }
+
+  @ControllerError()
+  async rejectWithdrawal(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const adminUserId = getAuthUserId(req);
+    const withdrawalId = Number(req.params.withdrawalId);
+    const notes =
+      String(req.body?.notes ?? req.body?.reason ?? "").trim() || null;
+
+    if (!Number.isFinite(withdrawalId) || withdrawalId <= 0) {
+      return res.status(400).json({ message: "Invalid withdrawalId" });
+    }
+
+    const withdrawal = await billingDb.rejectWithdrawalRequest(
+      withdrawalId,
+      adminUserId,
+      notes
+    );
+
+    return res.status(200).json({
+      message: "Withdrawal rejected",
+      data: withdrawal,
+    });
+  }
+
+  @ControllerError()
+  async updateWithdrawalSettings(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+
+    const { minWithdrawalAmountInr } = req.body as {
+      minWithdrawalAmountInr?: number;
+    };
+
+    if (
+      typeof minWithdrawalAmountInr !== "number" ||
+      !Number.isFinite(minWithdrawalAmountInr)
+    ) {
+      return res
+        .status(400)
+        .json({ message: "minWithdrawalAmountInr must be a number" });
+    }
+
+    const settings = await billingDb.updateWithdrawalSettings(
+      minWithdrawalAmountInr
+    );
+
+    return res.status(200).json({
+      message: "Withdrawal settings updated",
+      data: settings,
+    });
+  }
+
+  @ControllerError()
+  async getCurrentSubscription(req: AuthRequest, res: Response) {
+    this.ensureNonAdmin(req);
     const userId = getAuthUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
@@ -100,7 +256,8 @@ export class PaymentController {
   }
 
   @ControllerError()
-  async cancelSubscription(req: Request, res: Response) {
+  async cancelSubscription(req: AuthRequest, res: Response) {
+    this.ensureNonAdmin(req);
     const userId = getAuthUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
@@ -115,12 +272,21 @@ export class PaymentController {
   }
 
   @ControllerError()
+  async listMyInvoices(req: AuthRequest, res: Response) {
+    const userId = Number((req as any).auth!.userId);
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
+    const { items, total } = await billingDb.listInvoicesForUser(userId, page, limit);
+    res.json({ data: items, total, page, limit });
+  }
+
+  @ControllerError()
   async webhook(req: Request, res: Response) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "";
     if (!webhookSecret) return res.status(500).send("RAZORPAY_WEBHOOK_SECRET missing");
 
     const signature = (req.headers["x-razorpay-signature"] as string) || "";
-    const rawBody = req.body as Buffer;
+    const rawBody = ((req as any).rawBody ?? req.body) as Buffer;
 
     if (!rawBody || !Buffer.isBuffer(rawBody)) {
       return res.status(400).send("Webhook raw body missing");
@@ -148,11 +314,43 @@ export class PaymentController {
         break;
 
       case "order.paid":
+        await billingDb.handleRazorpayOrderPaid(event);
         break;
 
       default:
         break;
     }
+
+    return res.status(200).json({ received: true });
+  }
+
+  @ControllerError()
+  async payoutWebhook(req: Request, res: Response) {
+    const webhookSecret = process.env.RAZORPAYX_WEBHOOK_SECRET || "";
+    if (!webhookSecret) return res.status(500).send("RAZORPAYX_WEBHOOK_SECRET missing");
+
+    const signature = (req.headers["x-razorpay-signature"] as string) || "";
+    const rawBody = ((req as any).rawBody ?? req.body) as Buffer;
+
+    if (!rawBody || !Buffer.isBuffer(rawBody)) {
+      return res.status(400).send("Webhook raw body missing");
+    }
+
+    const isValid = razorpayXService.verifyWebhookSignature(
+      rawBody,
+      signature,
+      webhookSecret
+    );
+    if (!isValid) return res.status(400).send("Invalid webhook signature");
+
+    let event: any;
+    try {
+      event = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      return res.status(400).send("Invalid JSON payload");
+    }
+
+    await billingDb.handleRazorpayXPayoutWebhook(event);
 
     return res.status(200).json({ received: true });
   }

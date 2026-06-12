@@ -2,9 +2,51 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserSubscriptionService = void 0;
 const userSubscription_db_1 = require("./userSubscription.db");
+const constants_1 = require("../../../types/constants");
+const planStrategy_1 = require("../../subscriptionPlan/utils/planStrategy");
 class UserSubscriptionService {
     constructor() {
         this.db = new userSubscription_db_1.UserSubscriptionDBService();
+    }
+    async ensureSchema() {
+        await this.db.ensureSchema();
+    }
+    buildStrategyMap(instances) {
+        return new Map(instances.map((instance) => [
+            Number(instance.subscriptionId),
+            {
+                instanceId: Number(instance.id),
+                status: instance.status,
+                volume: Number(instance.volume),
+                definition: {
+                    id: Number(instance.strategy.id),
+                    strategyCode: instance.strategy.strategyCode,
+                    name: instance.strategy.name,
+                    isActive: Boolean(instance.strategy.isActive),
+                },
+                managedByAdminWebhook: true,
+            },
+        ]));
+    }
+    attachStrategy(subscription, strategyMap) {
+        const normalizedPlanStrategies = (0, planStrategy_1.normalizePlanStrategies)(subscription.plan?.planStrategies);
+        const firstPlanStrategy = (0, planStrategy_1.selectPrimaryPlanStrategy)(normalizedPlanStrategies);
+        return Object.assign(subscription, {
+            strategy: firstPlanStrategy
+                ? strategyMap.get(Number(subscription.id)) ?? null
+                : null,
+            plan: Object.assign(subscription.plan, {
+                planStrategies: normalizedPlanStrategies.slice(0, 1),
+                strategy: firstPlanStrategy?.strategy
+                    ? {
+                        id: Number(firstPlanStrategy.strategy.id),
+                        strategyCode: firstPlanStrategy.strategy.strategyCode,
+                        name: firstPlanStrategy.strategy.name,
+                        isActive: Boolean(firstPlanStrategy.strategy.isActive),
+                    }
+                    : null,
+            }),
+        });
     }
     async subscribe(userId, payload) {
         const { planId } = payload;
@@ -17,6 +59,12 @@ class UserSubscriptionService {
         const alreadySubscribedToSamePlan = (existing ?? []).some((sub) => Number(sub.planId) === Number(planId));
         if (alreadySubscribedToSamePlan) {
             throw new Error("User already has an active subscription for this plan");
+        }
+        if ((0, planStrategy_1.selectUnavailablePlanStrategyForNewSubscription)(plan.planStrategies)) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._BAD_REQUEST,
+                message: "strategy_unavailable_for_new_subscription",
+            };
         }
         // NEW DESIGN: interval comes from pricing.interval
         const interval = plan.pricing?.interval ?? "monthly";
@@ -35,8 +83,15 @@ class UserSubscriptionService {
         }
         await this.db.cancelSubscriptionNow(userId);
     }
-    getCurrentSubscription(userId, start, count, searchParams) {
-        return this.db.getActiveSubscriptionCurrent(userId, start, count, searchParams);
+    async getCurrentSubscription(userId, start, count, searchParams) {
+        const subscription = await this.db.getActiveSubscriptionCurrent(userId, start, count, searchParams);
+        const subscriptionIds = (subscription.data ?? []).map((item) => Number(item.id));
+        const instances = await this.db.getStrategyInstancesForSubscriptions(userId, subscriptionIds);
+        const strategyMap = this.buildStrategyMap(instances);
+        return {
+            ...subscription,
+            data: (subscription.data ?? []).map((item) => this.attachStrategy(item, strategyMap)),
+        };
     }
     getFollowerUserTradingAccount(userId, start, count, searchParams) {
         return this.db.getFollowerUserTradingAccount(userId, start, count, searchParams);
@@ -57,6 +112,9 @@ class UserSubscriptionService {
         catch (error) {
             throw error;
         }
+    }
+    saveWebhookSettings(userId, payload) {
+        return this.db.saveWebhookSettings(userId, payload);
     }
 }
 exports.UserSubscriptionService = UserSubscriptionService;

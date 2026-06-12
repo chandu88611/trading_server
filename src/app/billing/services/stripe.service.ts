@@ -1,18 +1,10 @@
 import Stripe from "stripe";
 import { SubscriptionPlan } from "../../../entity";
-import AppDataSource from "../../../db/data-source";
-import { Repository } from "typeorm";
 import { BillingInterval } from "../enums/strip.interface";
 
 const stripe = new Stripe(process.env.STRIPE_API_KEY || "");
 
 export class StripeService {
-  private planRepo: Repository<SubscriptionPlan>;
-
-  constructor() {
-    this.planRepo = AppDataSource.getRepository(SubscriptionPlan);
-  }
-
   async getOrCreateCustomer(userId: number, email?: string, name?: string) {
     const customer = await stripe.customers.create({
       email,
@@ -35,12 +27,17 @@ export class StripeService {
       metadata: { planId: String(plan.id) },
     });
 
-    const priceUnit = plan.priceCents;
+    const pricing = plan.pricing;
+    if (!pricing) {
+      throw new Error("plan_pricing_not_found");
+    }
+
+    const priceUnit = pricing.priceInr;
     const price = await stripe.prices.create({
       product: product.id,
       unit_amount: priceUnit,
-      currency: plan.currency.toLowerCase(),
-      recurring: { interval: toStripeInterval(plan.interval) },
+      currency: String(pricing.currency || "INR").toLowerCase(),
+      recurring: { interval: toStripeInterval(pricing.interval) },
       metadata: { planId: String(plan.id) },
     });
 
@@ -77,12 +74,14 @@ export class StripeService {
 }
 
 export function toStripeInterval(
-  interval: BillingInterval
+  interval: BillingInterval | string
 ): Stripe.Price.Recurring.Interval {
   switch (interval) {
     case BillingInterval.MONTHLY:
+    case "monthly":
       return "month";
     case BillingInterval.YEARLY:
+    case "yearly":
       return "year";
     default:
       throw new Error(`Unsupported interval: ${interval}`);

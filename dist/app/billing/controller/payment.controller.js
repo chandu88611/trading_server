@@ -45,23 +45,50 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentController = void 0;
 const error_handler_1 = require("../../../types/error-handler");
 const razorpay_service_1 = require("../services/razorpay.service");
+const razorpayx_service_1 = require("../services/razorpayx.service");
 const billing_db_1 = require("../services/billing.db");
+const entity_1 = require("../../../entity");
+const auth_1 = require("../../../middleware/auth");
+const constants_1 = require("../../../types/constants");
 const razorpayService = new razorpay_service_1.RazorpayService();
+const razorpayXService = new razorpayx_service_1.RazorpayXService();
 const billingDb = new billing_db_1.BillingDBService();
 function getAuthUserId(req) {
     const raw = req.auth?.id ?? req.auth?.userId;
     return Number(raw || 0);
 }
 class PaymentController {
+    ensureNonAdmin(req) {
+        const roles = req.auth?.roles ?? [];
+        if (roles.includes(auth_1.Roles.ADMIN)) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._BAD_REQUEST,
+                message: "admin_subscriptions_not_allowed",
+            };
+        }
+    }
+    ensureAdmin(req) {
+        const roles = req.auth?.roles ?? [];
+        if (!roles.includes(auth_1.Roles.ADMIN)) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._UNAUTHORISED,
+                message: "Admin access required",
+            };
+        }
+    }
     async createCheckout(req, res) {
+        this.ensureNonAdmin(req);
         const userId = getAuthUserId(req);
         if (!userId)
             return res.status(401).json({ message: "Unauthorized" });
         const { planId } = req.body;
         if (!planId)
             return res.status(400).json({ message: "planId required" });
-        const planRepo = (await Promise.resolve().then(() => __importStar(require("../../../db/data-source")))).default.getRepository("SubscriptionPlan");
-        const plan = (await planRepo.findOne({ where: { id: planId } }));
+        const planRepo = (await Promise.resolve().then(() => __importStar(require("../../../db/data-source")))).default.getRepository(entity_1.SubscriptionPlan);
+        const plan = (await planRepo.findOne({
+            where: { id: planId },
+            relations: { pricing: true },
+        }));
         if (!plan)
             return res.status(404).json({ message: "Plan not found" });
         if (!plan.isActive)
@@ -81,6 +108,7 @@ class PaymentController {
         });
     }
     async verifyPayment(req, res) {
+        this.ensureNonAdmin(req);
         const userId = getAuthUserId(req);
         if (!userId)
             return res.status(401).json({ message: "Unauthorized" });
@@ -103,7 +131,93 @@ class PaymentController {
             data: updated,
         });
     }
+    async getWallet(req, res) {
+        const userId = getAuthUserId(req);
+        if (!userId)
+            return res.status(401).json({ message: "Unauthorized" });
+        const wallet = await billingDb.getWalletSummary(userId);
+        return res.status(200).json({
+            message: "Wallet fetched successfully",
+            data: wallet,
+        });
+    }
+    async listWithdrawals(req, res) {
+        const userId = getAuthUserId(req);
+        if (!userId)
+            return res.status(401).json({ message: "Unauthorized" });
+        const withdrawals = await billingDb.listWithdrawals(userId);
+        return res.status(200).json({
+            message: "Withdrawals fetched successfully",
+            data: withdrawals,
+        });
+    }
+    async createWithdrawal(req, res) {
+        const userId = getAuthUserId(req);
+        if (!userId)
+            return res.status(401).json({ message: "Unauthorized" });
+        const { amount } = req.body;
+        if (typeof amount !== "number" || !Number.isFinite(amount)) {
+            return res.status(400).json({ message: "amount must be a number" });
+        }
+        const withdrawal = await billingDb.createWithdrawalRequest(userId, amount);
+        return res.status(201).json({
+            message: "Withdrawal requested",
+            data: withdrawal,
+        });
+    }
+    async listAdminWithdrawals(req, res) {
+        this.ensureAdmin(req);
+        const withdrawals = await billingDb.listAdminWithdrawals();
+        return res.status(200).json({
+            message: "Admin withdrawals fetched successfully",
+            data: withdrawals,
+        });
+    }
+    async approveWithdrawal(req, res) {
+        this.ensureAdmin(req);
+        const adminUserId = getAuthUserId(req);
+        const withdrawalId = Number(req.params.withdrawalId);
+        const notes = String(req.body?.notes ?? "").trim() || null;
+        if (!Number.isFinite(withdrawalId) || withdrawalId <= 0) {
+            return res.status(400).json({ message: "Invalid withdrawalId" });
+        }
+        const withdrawal = await billingDb.approveWithdrawalRequest(withdrawalId, adminUserId, notes);
+        return res.status(200).json({
+            message: "Withdrawal approved",
+            data: withdrawal,
+        });
+    }
+    async rejectWithdrawal(req, res) {
+        this.ensureAdmin(req);
+        const adminUserId = getAuthUserId(req);
+        const withdrawalId = Number(req.params.withdrawalId);
+        const notes = String(req.body?.notes ?? req.body?.reason ?? "").trim() || null;
+        if (!Number.isFinite(withdrawalId) || withdrawalId <= 0) {
+            return res.status(400).json({ message: "Invalid withdrawalId" });
+        }
+        const withdrawal = await billingDb.rejectWithdrawalRequest(withdrawalId, adminUserId, notes);
+        return res.status(200).json({
+            message: "Withdrawal rejected",
+            data: withdrawal,
+        });
+    }
+    async updateWithdrawalSettings(req, res) {
+        this.ensureAdmin(req);
+        const { minWithdrawalAmountInr } = req.body;
+        if (typeof minWithdrawalAmountInr !== "number" ||
+            !Number.isFinite(minWithdrawalAmountInr)) {
+            return res
+                .status(400)
+                .json({ message: "minWithdrawalAmountInr must be a number" });
+        }
+        const settings = await billingDb.updateWithdrawalSettings(minWithdrawalAmountInr);
+        return res.status(200).json({
+            message: "Withdrawal settings updated",
+            data: settings,
+        });
+    }
     async getCurrentSubscription(req, res) {
+        this.ensureNonAdmin(req);
         const userId = getAuthUserId(req);
         if (!userId)
             return res.status(401).json({ message: "Unauthorized" });
@@ -113,6 +227,7 @@ class PaymentController {
         return res.status(200).json({ message: "Fetched current subscription", data: sub });
     }
     async cancelSubscription(req, res) {
+        this.ensureNonAdmin(req);
         const userId = getAuthUserId(req);
         if (!userId)
             return res.status(401).json({ message: "Unauthorized" });
@@ -123,12 +238,19 @@ class PaymentController {
             data: updated,
         });
     }
+    async listMyInvoices(req, res) {
+        const userId = Number(req.auth.userId);
+        const page = Math.max(1, Number(req.query.page ?? 1));
+        const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 20)));
+        const { items, total } = await billingDb.listInvoicesForUser(userId, page, limit);
+        res.json({ data: items, total, page, limit });
+    }
     async webhook(req, res) {
         const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "";
         if (!webhookSecret)
             return res.status(500).send("RAZORPAY_WEBHOOK_SECRET missing");
         const signature = req.headers["x-razorpay-signature"] || "";
-        const rawBody = req.body;
+        const rawBody = (req.rawBody ?? req.body);
         if (!rawBody || !Buffer.isBuffer(rawBody)) {
             return res.status(400).send("Webhook raw body missing");
         }
@@ -151,10 +273,33 @@ class PaymentController {
                 await billingDb.handleRazorpayPaymentFailed(event);
                 break;
             case "order.paid":
+                await billingDb.handleRazorpayOrderPaid(event);
                 break;
             default:
                 break;
         }
+        return res.status(200).json({ received: true });
+    }
+    async payoutWebhook(req, res) {
+        const webhookSecret = process.env.RAZORPAYX_WEBHOOK_SECRET || "";
+        if (!webhookSecret)
+            return res.status(500).send("RAZORPAYX_WEBHOOK_SECRET missing");
+        const signature = req.headers["x-razorpay-signature"] || "";
+        const rawBody = (req.rawBody ?? req.body);
+        if (!rawBody || !Buffer.isBuffer(rawBody)) {
+            return res.status(400).send("Webhook raw body missing");
+        }
+        const isValid = razorpayXService.verifyWebhookSignature(rawBody, signature, webhookSecret);
+        if (!isValid)
+            return res.status(400).send("Invalid webhook signature");
+        let event;
+        try {
+            event = JSON.parse(rawBody.toString("utf8"));
+        }
+        catch {
+            return res.status(400).send("Invalid JSON payload");
+        }
+        await billingDb.handleRazorpayXPayoutWebhook(event);
         return res.status(200).json({ received: true });
     }
 }
@@ -176,6 +321,48 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
+], PaymentController.prototype, "getWallet", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "listWithdrawals", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "createWithdrawal", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "listAdminWithdrawals", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "approveWithdrawal", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "rejectWithdrawal", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "updateWithdrawalSettings", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
 ], PaymentController.prototype, "getCurrentSubscription", null);
 __decorate([
     (0, error_handler_1.ControllerError)(),
@@ -188,4 +375,16 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
+], PaymentController.prototype, "listMyInvoices", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
 ], PaymentController.prototype, "webhook", null);
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], PaymentController.prototype, "payoutWebhook", null);

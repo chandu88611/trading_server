@@ -6,21 +6,22 @@ import { UserService } from "../../user/services/user.service";
 import { UserDBService } from "../../user/services/user.db";
 import {
   getJwtSecret,
+  Roles,
   signAccessToken,
   signRefreshToken,
 } from "../../../middleware/auth";
-import { access } from "fs";
 import { generateVerificationToken } from "../../../types/token";
 import { sendVerificationEmail } from "../../../types/email.service";
-import { AuthService } from "../services/auth.service";
+import { CrmLifecycleSyncService } from "../../integrations/crm/services/crmLifecycleSync.service";
 
 const userService = new UserService();
 const userDb = new UserDBService();
+const crmLifecycleSyncService = new CrmLifecycleSyncService();
 
 const ACCESS_COOKIE = "access_token";
 const REFRESH_COOKIE = "refresh_token";
 
-const ACCESS_TTL_MS = 1000 * 60 * 15; // 15 min
+const ACCESS_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days (matches access JWT lifetime)
 const REFRESH_TTL_MS = 1000 * 60 * 60 * 24 * 15; // 15 days
 
 /**
@@ -103,12 +104,15 @@ function logReq(req: Request, label: string) {
   );
 }
 
-export class AuthController {
-   private readonly authService: AuthService;
+function serializeAuthRole(user: { isAdmin?: boolean }) {
+  return user.isAdmin ? Roles.ADMIN : Roles.USER;
+}
 
-  constructor() {
-    this.authService = new AuthService();
-  }
+function serializeAuthRoles(user: { isAdmin?: boolean }) {
+  return user.isAdmin ? [Roles.ADMIN, Roles.USER] : [Roles.USER];
+}
+
+export class AuthController {
   async login(req: Request, res: Response) {
     logReq(req, "LOGIN");
     try {
@@ -125,6 +129,9 @@ export class AuthController {
           id: result.user.id,
           email: result.user.email,
           name: result.user.name,
+          role: serializeAuthRole(result.user),
+          roles: serializeAuthRoles(result.user),
+          isAdmin: result.user.isAdmin,
           access: result.accessToken,
           refresh: result.refreshToken,
         },
@@ -138,7 +145,7 @@ export class AuthController {
   async google(req: Request, res: Response) {
     logReq(req, "GOOGLE");
     try {
-      const { id_token } = req.body ?? {};
+      const { id_token, referralCode } = req.body ?? {};
       if (!id_token)
         return res.status(400).json({ message: "id_token required" });
 
@@ -181,10 +188,15 @@ export class AuthController {
         "google",
         info.sub,
         info.email,
-        info.name
+        info.name,
+        false,
+        referralCode
       );
 
       setAuthCookies(res, result.accessToken, result.refreshToken);
+      if (result.isNewUser) {
+        void crmLifecycleSyncService.syncUserRegistered(result.user.id);
+      }
 
       console.log(
         "[AUTH] google login success userId:",
@@ -199,12 +211,15 @@ export class AuthController {
           id: result.user.id,
           email: result.user.email,
           name: result.user.name,
+          role: serializeAuthRole(result.user),
+          roles: serializeAuthRoles(result.user),
+          isAdmin: result.user.isAdmin,
         },
       });
     } catch (err: any) {
       console.log("[AUTH] google error:", err?.message);
       return res
-        .status(500)
+        .status(Number(err?.statusCode) || 500)
         .json({ message: err.message || "Google auth failed" });
     }
   }
@@ -257,7 +272,14 @@ export class AuthController {
       }
 
       return res.json({
-        user: { id: user.id, email: user.email, name: user.name },
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: serializeAuthRole(user),
+          roles: serializeAuthRoles(user),
+          isAdmin: user.isAdmin,
+        },
       });
     } catch (e: any) {
       console.log("[AUTH] ME error:", e?.message);
@@ -284,7 +306,11 @@ export class AuthController {
       if (!tokenRow || tokenRow.revoked)
         return res.status(401).json({ message: "Unauthorized" });
 
-      const newAccess = signAccessToken({ userId, roles: ["USER"] });
+      const refreshedRoles = tokenRow.user?.isAdmin
+        ? [Roles.ADMIN, Roles.USER]
+        : [Roles.USER];
+
+      const newAccess = signAccessToken({ userId, roles: refreshedRoles });
 
       const refreshPlain = crypto.randomBytes(48).toString("hex");
       const newHash = crypto

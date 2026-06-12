@@ -1,11 +1,31 @@
 // src/app/trade/controllers/trade.controller.ts
 import { Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
-import { AuthRequest } from "../../../middleware/auth";
+import { AuthRequest, Roles } from "../../../middleware/auth";
 import { TradeService } from "../services/trade.service";
+import { TradeAlertService } from "../services/tradeAlert.service";
+import AppDataSource from "../../../db/data-source";
 
 export class TradeController {
   private service = new TradeService();
+  private alertService = new TradeAlertService();
+
+  private ensureAdmin(req: AuthRequest) {
+    if (!req.auth?.roles?.includes(Roles.ADMIN)) {
+      throw {
+        statusCode: 401,
+        message: "Admin access required",
+      };
+    }
+  }
+
+  private parsePositiveInt(value: unknown): number | null {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null;
+    }
+    return parsed;
+  }
 
   @ControllerError()
   async getAllTrades(req: AuthRequest, res: Response) {
@@ -55,5 +75,175 @@ export class TradeController {
     }
     const result = await this.service.closeTrade(signalIds.map(Number), userId, isCloseAll);
     res.status(200).json(result);
+  }
+
+  @ControllerError()
+  async listTradeAlerts(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const start = Number(req.query.start ?? 0);
+    const count = Number(req.query.count ?? 20);
+    const unreadOnly = String(req.query.unreadOnly ?? "false").toLowerCase() === "true";
+
+    const result = await this.alertService.listForUser(userId, {
+      start: Number.isFinite(start) ? start : 0,
+      count: Number.isFinite(count) ? count : 20,
+      unreadOnly,
+    });
+    res.status(200).json(result);
+  }
+
+  @ControllerError()
+  async markTradeAlertRead(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const alertId = this.parsePositiveInt(req.params.alertId);
+    if (!alertId) {
+      res.status(400).json({ message: "invalid_trade_alert_id" });
+      return;
+    }
+
+    const result = await this.alertService.markRead(userId, alertId);
+    res.status(200).json({
+      message: "trade_alert_marked_read",
+      data: result,
+    });
+  }
+
+  @ControllerError()
+  async markAllTradeAlertsRead(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const result = await this.alertService.markAllRead(userId);
+    res.status(200).json({
+      message: "trade_alerts_marked_read",
+      data: result,
+    });
+  }
+
+  @ControllerError()
+  async listAdminStrategyTrades(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const start = Number(req.query.start ?? 0);
+    const count = Number(req.query.count ?? 20);
+    const strategyIdParam = req.query.strategyId
+      ? this.parsePositiveInt(req.query.strategyId)
+      : undefined;
+    const planIdParam = req.query.planId
+      ? this.parsePositiveInt(req.query.planId)
+      : undefined;
+
+    if (req.query.strategyId && !strategyIdParam) {
+      res.status(400).json({ message: "invalid_strategy_id" });
+      return;
+    }
+    if (req.query.planId && !planIdParam) {
+      res.status(400).json({ message: "invalid_plan_id" });
+      return;
+    }
+
+    const result = await this.service.listAdminStrategyTrades({
+      strategyId: strategyIdParam ?? undefined,
+      planId: planIdParam ?? undefined,
+      status: req.query.status ? String(req.query.status) : undefined,
+      from: req.query.from ? String(req.query.from) : undefined,
+      to: req.query.to ? String(req.query.to) : undefined,
+      start: Number.isFinite(start) ? start : 0,
+      count: Number.isFinite(count) ? count : 20,
+    });
+    res.status(200).json(result);
+  }
+
+  @ControllerError()
+  async getAdminStrategyTrade(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const adminStrategyTradeId = this.parsePositiveInt(
+      req.params.adminStrategyTradeId
+    );
+    if (!adminStrategyTradeId) {
+      res.status(400).json({ message: "invalid_admin_strategy_trade_id" });
+      return;
+    }
+
+    const result = await this.service.getAdminStrategyTrade(adminStrategyTradeId);
+    res.status(200).json(result);
+  }
+
+  @ControllerError()
+  async closeAdminStrategyTrade(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const adminStrategyTradeId = this.parsePositiveInt(
+      req.params.adminStrategyTradeId
+    );
+    if (!adminStrategyTradeId) {
+      res.status(400).json({ message: "invalid_admin_strategy_trade_id" });
+      return;
+    }
+
+    const result = await this.service.closeAdminStrategyTrade(adminStrategyTradeId);
+    res.status(200).json(result);
+  }
+
+  @ControllerError()
+  async getMyPnl(req: AuthRequest, res: Response) {
+    const userId = Number(req.auth!.userId);
+    const period = String(req.query.period ?? "30d");
+
+    let daysBack: number | null = null;
+    if (period === "7d") daysBack = 7;
+    else if (period === "30d") daysBack = 30;
+    else if (period === "90d") daysBack = 90;
+
+    const dateFilter = daysBack
+      ? `AND ts.created_at >= NOW() - INTERVAL '${daysBack} days'`
+      : "";
+
+    const daily = await AppDataSource.query(
+      `SELECT
+         DATE_TRUNC('day', ts.created_at) AS day,
+         SUM(COALESCE(ts.price, 0) * COALESCE(ts.volume, 0) *
+             CASE WHEN UPPER(ts.action) IN ('SELL','SHORT','CLOSE') THEN 1 ELSE -1 END
+         ) AS pnl,
+         COUNT(*) AS trades,
+         ts.symbol
+       FROM trade_signals ts
+       INNER JOIN trade_signals_status tss ON tss.signal_id = ts.id
+       WHERE ts.user_id = $1
+         AND tss.status IN ('completed', 'closed', 'executed')
+         ${dateFilter}
+       GROUP BY DATE_TRUNC('day', ts.created_at), ts.symbol
+       ORDER BY day DESC`,
+      [userId],
+    );
+
+    const summary = await AppDataSource.query(
+      `SELECT
+         COUNT(*) AS total_trades,
+         SUM(COALESCE(ts.price, 0) * COALESCE(ts.volume, 0) *
+             CASE WHEN UPPER(ts.action) IN ('SELL','SHORT','CLOSE') THEN 1 ELSE -1 END
+         ) AS total_pnl,
+         COUNT(DISTINCT ts.symbol) AS unique_symbols
+       FROM trade_signals ts
+       INNER JOIN trade_signals_status tss ON tss.signal_id = ts.id
+       WHERE ts.user_id = $1
+         AND tss.status IN ('completed', 'closed', 'executed')
+         ${dateFilter}`,
+      [userId],
+    );
+
+    const s = summary[0] ?? {};
+    res.json({
+      data: {
+        summary: {
+          totalTrades: Number(s.total_trades ?? 0),
+          totalPnl: Number(s.total_pnl ?? 0),
+          uniqueSymbols: Number(s.unique_symbols ?? 0),
+          period,
+        },
+        daily: daily.map((r: any) => ({
+          date: r.day,
+          pnl: Number(r.pnl ?? 0),
+          trades: Number(r.trades ?? 0),
+          symbol: r.symbol,
+        })),
+      },
+    });
   }
 }

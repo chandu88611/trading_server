@@ -1,6 +1,6 @@
 // src/app/trade/services/tradeGuard.service.ts
 import AppDataSource from "../../../db/data-source";
-import { AssetClassifier, AssetType } from "../../../types/trade-identify";
+import { AssetClassifier, AssetType, MarketType } from "../../../types/trade-identify";
 import { UserSubscriptionDBService } from "../../userSubscription/services/userSubscription.db";
 import { HttpStatusCode } from "../../../types/constants";
 import { User } from "../../../entity";
@@ -22,6 +22,22 @@ export type TradeCheckResult = {
 export class TradeGuardService {
   private userRepo = AppDataSource.getRepository(User);
   private subDB = new UserSubscriptionDBService();
+
+  private resolveMarketType(assetType: AssetType): MarketType | null {
+    switch (assetType) {
+      case AssetType.FOREX:
+        return MarketType.FOREX;
+      case AssetType.CRYPTO:
+        return MarketType.CRYPTO;
+      case AssetType.STOCK:
+      case AssetType.INDEX:
+      case AssetType.COMMODITY:
+      case AssetType.FUTURES:
+        return MarketType.INDIAN;
+      default:
+        return null;
+    }
+  }
 
   async checkTradeAllowed(input: TradeCheckInput): Promise<TradeCheckResult> {
     try {
@@ -47,8 +63,13 @@ export class TradeGuardService {
         return { allowed: false, reason: "unknown_asset_type" };
       }
 
+      const marketType = this.resolveMarketType(assetType);
+      if (!marketType) {
+        return { allowed: false, reason: "unsupported_market_type" };
+      }
+
       // 3) active subscription for this market?
-      const sub = await this.subDB.subscriberPlanValidation(userId, assetType);
+      const sub = await this.subDB.subscriberPlanValidation(userId, marketType);
       if (!sub) {
         return {
           allowed: false,

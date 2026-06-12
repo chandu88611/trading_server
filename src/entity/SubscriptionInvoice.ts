@@ -19,8 +19,8 @@ export class SubscriptionInvoice {
   id!: number;
 
   @Index()
-  @Column({ name: "subscription_id", type: "bigint" })
-  subscriptionId!: number;
+  @Column({ name: "subscription_id", type: "bigint", nullable: true })
+  subscriptionId!: number | null;
 
   @Index()
   @Column({ name: "user_id", type: "bigint" })

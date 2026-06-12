@@ -25,6 +25,10 @@ export class DhanDB {
 	async updateAccountMeta(account: UserTradingAccount, metaPatch: Record<string, any>) {
 		const nextMeta = { ...(account.accountMeta ?? {}), ...metaPatch };
 		account.accountMeta = nextMeta;
+		console.log("Updating trading account meta", { accountId: account.id, userId: account.userId, metaPatch, nextMeta,  });
+		if(metaPatch?.dhan?.accessToken) {
+			account.accessToken = nextMeta.dhan.accessToken ?? account.accessToken;
+		}
 		return this.accountRepo.save(account);
 	}
 
@@ -43,15 +47,15 @@ export class DhanDB {
 	}
 
 	async markJobFailed(job: TradeSignal, error: string) {
+		void error;
 		await this.tradeSignalRepo.manager.query(
 			`
 			UPDATE trade_signals_status
 			SET status='failed',
-					last_error=$2,
 					attempts=attempts+1
 			WHERE id=$1
 			`,
-			[job.status.id, error]
+			[job.status.id]
 		);
 	}
 
@@ -66,7 +70,11 @@ export class DhanDB {
 			const qb: any = statusRepo
 				.createQueryBuilder("s")
 				.select("s.tradeSignalId", "id")
+				.innerJoin("s.tradeSignal", "ts")
+				.innerJoin("ts.tradingAccount", "ta")
+				.innerJoin("ta.broker", "b")
 				.where("s.status = :status", { status: "pending" })
+				.andWhere("(b.code = :code OR b.name = :name)", { code: "DHAN", name: "Dhan" })
 				.orderBy("s.tradeSignalId", "ASC")
 				.limit(limit)
 				.setLock("pessimistic_write");
@@ -84,7 +92,7 @@ export class DhanDB {
 			await statusRepo
 				.createQueryBuilder()
 				.update(TradeSignalStatus)
-				.set({ status: "processing", updatedAt: new Date() })
+				.set({ status: "in_progress", updatedAt: new Date() })
 				.where("tradeSignalId IN (:...ids)", { ids })
 				.execute();
 

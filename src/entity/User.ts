@@ -6,8 +6,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
 } from "typeorm";
 import { AuthProvider } from "./AuthProvider";
+import { UserEdgingStatus } from "./UserEdgingStatus";
 
 @Entity({ name: "users" })
 export class User {
@@ -19,6 +21,12 @@ export class User {
 
   @Column({ type: "text", nullable: true })
   name!: string | null;
+
+  @Column({ name: "referral_code", type: "text", nullable: true })
+  referralCode!: string | null;
+
+  @Column({ name: "referred_by_user_id", type: "int", nullable: true })
+  referredByUserId!: number | null;
 
   @Column({ name: "password_hash", type: "text", nullable: false })
   passwordHash!: string;
@@ -118,4 +126,6 @@ export class User {
   @OneToMany(() => AuthProvider, (ap) => ap.user)
   authProviders?: AuthProvider[];
 
+  @OneToOne(() => UserEdgingStatus, (ues) => ues.user)
+  userEdgingStatus?: UserEdgingStatus;
 }

@@ -7,10 +7,24 @@ import {
   RefreshToken,
   SubscriptionInvoice,
   SubscriptionPayment,
+  RazorpayOrder,
   SubscriptionPlan,
+  PlanAdminWebhookToken,
   UserSubscription,
   UserEdgingStatus,
-
+  UserRiskLimits,
+  ReferralRewardCredit,
+  WithdrawalRequest,
+  WithdrawalSetting,
+  AdminStrategyTradeScheduleSetting,
+  AdminStrategyTrade,
+  CrmSyncOutbox,
+  SupportTicket,
+  SupportTicketMessage,
+  CTraderTrailingTakeProfitMonitor,
+  Mt5Symbol,
+  ZebuProtectionMonitor,
+  SubscriberTradeAlert,
 } from "../entity";
 import { AlertSnapshot } from "../entity/AlertSnapshots";
 import { TradeSignal } from "../entity/TradeSignals";
@@ -30,6 +44,7 @@ import { TradeSignalStatus } from "../entity/TradeSignalsStatus";
 import { Broker } from "../entity/Brokers";
 import { CTraderSession } from "../entity/CTraderSession";
 import { CTraderSymbol } from "../entity/CTraderSymbol";
+import { UserStrategyInstance } from "../entity/UserStrategyInstance";
 
 dotenv.config();
 
@@ -51,10 +66,23 @@ export const AppDataSource = new DataSource({
     AlertSnapshot,
     SubscriptionInvoice,
     SubscriptionPayment,
+    RazorpayOrder,
     SubscriptionPlan,
+    PlanAdminWebhookToken,
     TradeSignal,
     UserSubscription,
     UserEdgingStatus,
+    UserRiskLimits,
+    ReferralRewardCredit,
+    WithdrawalRequest,
+    WithdrawalSetting,
+    AdminStrategyTradeScheduleSetting,
+    AdminStrategyTrade,
+    CrmSyncOutbox,
+    SupportTicket,
+    SupportTicketMessage,
+    CTraderTrailingTakeProfitMonitor,
+    SubscriberTradeAlert,
     UserBillingDetails,
     UserTradingAccount,
     CopyTradingFollowers,
@@ -68,12 +96,32 @@ export const AppDataSource = new DataSource({
     PlanFeature,
     PlanBundleItem,
     PlanStrategy,
+    UserStrategyInstance,
     Broker,
     CTraderSession,
     CTraderSymbol,
+    Mt5Symbol,
+    ZebuProtectionMonitor,
   ],
   migrations: [],
   subscribers: [],
 });
+
+let initializePromise: Promise<DataSource> | null = null;
+
+export async function ensureAppDataSourceInitialized(): Promise<DataSource> {
+  if (AppDataSource.isInitialized) {
+    return AppDataSource;
+  }
+
+  if (!initializePromise) {
+    initializePromise = AppDataSource.initialize().catch((error) => {
+      initializePromise = null;
+      throw error;
+    });
+  }
+
+  return initializePromise;
+}
 
 export default AppDataSource;

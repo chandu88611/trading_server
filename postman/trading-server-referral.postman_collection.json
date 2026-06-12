@@ -1,0 +1,365 @@
+{
+  "info": {
+    "_postman_id": "7a2d6ed3-c932-4c68-b6da-7ef3fd500001",
+    "name": "Trading Server Referral Flows",
+    "description": "Postman collection for the referral-related trading_server flows: registration with referral code, Google auth, login, self referral tree, and admin referral inspection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "referralCode",
+      "value": "AB12CD34"
+    },
+    {
+      "key": "userEmail",
+      "value": "newuser@example.com"
+    },
+    {
+      "key": "userPassword",
+      "value": "StrongPass123"
+    },
+    {
+      "key": "userName",
+      "value": "New User"
+    },
+    {
+      "key": "providerUserId",
+      "value": "google-user-202"
+    },
+    {
+      "key": "providerEmail",
+      "value": "provideruser@example.com"
+    },
+    {
+      "key": "providerName",
+      "value": "Provider User"
+    },
+    {
+      "key": "googleIdToken",
+      "value": "paste-real-google-id-token-here"
+    },
+    {
+      "key": "badReferralCode",
+      "value": "BADCODE1"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@example.com"
+    },
+    {
+      "key": "adminPassword",
+      "value": "StrongPass123"
+    },
+    {
+      "key": "userAccessToken",
+      "value": ""
+    },
+    {
+      "key": "adminAccessToken",
+      "value": ""
+    },
+    {
+      "key": "targetUserId",
+      "value": "45"
+    }
+  ],
+  "item": [
+    {
+      "name": "Registration",
+      "item": [
+        {
+          "name": "Email Signup With Referral Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"name\": \"{{userName}}\",\n  \"referralCode\": \"{{referralCode}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "register"
+              ]
+            },
+            "description": "Creates a standard email/password user and attaches the provided referral code."
+          }
+        },
+        {
+          "name": "Provider Signup Via /user/register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"google\",\n  \"providerUserId\": \"{{providerUserId}}\",\n  \"email\": \"{{providerEmail}}\",\n  \"name\": \"{{providerName}}\",\n  \"referralCode\": \"{{referralCode}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "register"
+              ]
+            },
+            "description": "Creates a provider user through the user registration endpoint with a referral code."
+          }
+        },
+        {
+          "name": "Invalid Referral Code Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"badref@example.com\",\n  \"password\": \"{{userPassword}}\",\n  \"referralCode\": \"{{badReferralCode}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "register"
+              ]
+            },
+            "description": "Negative test. Should return invalid_referral_code for a brand-new signup."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Google First-Time Sign-In With Referral Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_token\": \"{{googleIdToken}}\",\n  \"referralCode\": \"{{referralCode}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/google",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "google"
+              ]
+            },
+            "description": "First-time Google sign-in. If the Google account does not already exist, trading_server creates the user and applies the referral code."
+          }
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.user?.access) {",
+                  "  pm.collectionVariables.set('userAccessToken', json.user.access);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in a normal user and stores the returned access token into {{userAccessToken}}."
+          }
+        },
+        {
+          "name": "Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.user?.access) {",
+                  "  pm.collectionVariables.set('adminAccessToken', json.user.access);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in the admin user and stores the returned access token into {{adminAccessToken}}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Referral",
+      "item": [
+        {
+          "name": "Get My Referral Tree",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userAccessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/referral",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "referral"
+              ]
+            },
+            "description": "Returns the current user's referral code, upline, counts, and 2-level downline with masked emails."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Admin User List With Referral Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user?page=1&limit=20&search=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Returns the admin user list including referralCode, referredByUserId, level1ReferralCount, and level2ReferralCount."
+          }
+        },
+        {
+          "name": "Admin Get User Referral Tree",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/{{targetUserId}}/referral",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "{{targetUserId}}",
+                "referral"
+              ]
+            },
+            "description": "Admin-only view of one user's 2-level referral tree with full emails."
+          }
+        }
+      ]
+    }
+  ]
+}

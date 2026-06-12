@@ -109,6 +109,10 @@ __decorate([
     __metadata("design:type", String)
 ], UserTradingAccount.prototype, "refreshToken", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "mt5_poll_key", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], UserTradingAccount.prototype, "mt5PollKey", void 0);
+__decorate([
     (0, typeorm_1.OneToMany)(() => TradeSignals_1.TradeSignal, (tradeSignal) => tradeSignal.tradingAccount),
     __metadata("design:type", Array)
 ], UserTradingAccount.prototype, "tradeSignals", void 0);

@@ -7,9 +7,13 @@ const auth_1 = require("../../../middleware/auth");
 const tradingAccount_controller_1 = require("../controllers/tradingAccount.controller");
 class TradingAccountRouter {
     constructor() {
-        // List all accounts for current user
         this.routes = (0, express_1.Router)();
         this.controller = new tradingAccount_controller_1.TradingAccountController();
+        // GET /trading-accounts/me — all accounts for the logged-in user (no planId needed)
+        // Must be registered BEFORE /:id to avoid Express matching "me" as an id param
+        this.routes.get("/me", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), this.controller.listMyAccountsMe.bind(this.controller));
+        // GET /trading-accounts/:id/poll-key — MT5 poll key for EA configuration
+        this.routes.get("/:id/poll-key", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), this.controller.getMt5PollKey.bind(this.controller));
         // Create new account
         this.routes.post("/", (0, auth_1.requireAuth)([auth_1.Roles.USER, auth_1.Roles.ADMIN]), this.controller.createMyAccount.bind(this.controller));
         // Update account

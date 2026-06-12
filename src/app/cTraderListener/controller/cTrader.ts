@@ -16,6 +16,17 @@ export class CTraderController {
   }
 
   @ControllerError()
+  async getFunds(req: Request, res: Response) {
+    const userId = Number((req as any)?.auth?.userId);
+    const tradingAccountId = Number((req.query as any)?.tradingAccountId);
+    if (!userId || !tradingAccountId) {
+      return res.status(400).json({ message: "tradingAccountId_required" });
+    }
+    const data = await this.service.getFunds(userId, tradingAccountId);
+    return res.json({ data });
+  }
+
+  @ControllerError()
   async generateTokens(req: Request, res: Response) {
     try {
       const code = String((req.body as any)?.code ?? "").trim();

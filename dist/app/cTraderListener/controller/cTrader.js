@@ -22,6 +22,15 @@ class CTraderController {
             return null;
         return num;
     }
+    async getFunds(req, res) {
+        const userId = Number(req?.auth?.userId);
+        const tradingAccountId = Number(req.query?.tradingAccountId);
+        if (!userId || !tradingAccountId) {
+            return res.status(400).json({ message: "tradingAccountId_required" });
+        }
+        const data = await this.service.getFunds(userId, tradingAccountId);
+        return res.json({ data });
+    }
     async generateTokens(req, res) {
         try {
             const code = String(req.body?.code ?? "").trim();
@@ -94,6 +103,12 @@ class CTraderController {
     }
 }
 exports.CTraderController = CTraderController;
+__decorate([
+    (0, error_handler_1.ControllerError)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], CTraderController.prototype, "getFunds", null);
 __decorate([
     (0, error_handler_1.ControllerError)(),
     __metadata("design:type", Function),

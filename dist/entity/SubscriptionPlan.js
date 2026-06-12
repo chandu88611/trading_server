@@ -21,6 +21,7 @@ const PlanBundleItem_1 = require("./PlanBundleItem");
 const UserSubscription_1 = require("./UserSubscription");
 const SubscriptionInvoice_1 = require("./SubscriptionInvoice");
 const PlanStrategy_1 = require("./PlanStrategy");
+const PlanAdminWebhookToken_1 = require("./PlanAdminWebhookToken");
 let SubscriptionPlan = class SubscriptionPlan {
 };
 exports.SubscriptionPlan = SubscriptionPlan;
@@ -71,6 +72,10 @@ __decorate([
     __metadata("design:type", Object)
 ], SubscriptionPlan.prototype, "metadata", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "admin_webhook_token", type: "text", nullable: true, select: false }),
+    __metadata("design:type", Object)
+], SubscriptionPlan.prototype, "adminWebhookToken", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)({ name: "created_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], SubscriptionPlan.prototype, "createdAt", void 0);
@@ -110,6 +115,10 @@ __decorate([
     (0, typeorm_1.OneToMany)(() => SubscriptionInvoice_1.SubscriptionInvoice, (inv) => inv.plan),
     __metadata("design:type", Array)
 ], SubscriptionPlan.prototype, "invoices", void 0);
+__decorate([
+    (0, typeorm_1.OneToOne)(() => PlanAdminWebhookToken_1.PlanAdminWebhookToken, (token) => token.plan),
+    __metadata("design:type", Object)
+], SubscriptionPlan.prototype, "adminWebhook", void 0);
 exports.SubscriptionPlan = SubscriptionPlan = __decorate([
     (0, typeorm_1.Entity)({ name: "subscription_plans" })
 ], SubscriptionPlan);

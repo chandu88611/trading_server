@@ -68,6 +68,14 @@ __decorate([
     __metadata("design:type", Object)
 ], UserBillingDetails.prototype, "pincode", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "razorpay_contact_id", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], UserBillingDetails.prototype, "razorpayContactId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "razorpay_fund_account_id", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], UserBillingDetails.prototype, "razorpayFundAccountId", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)({ name: "created_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], UserBillingDetails.prototype, "createdAt", void 0);

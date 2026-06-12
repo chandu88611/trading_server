@@ -13,7 +13,7 @@ class AuthCookieManager {
     static setAuthCookies(res, accessToken, refreshToken) {
         res.cookie(this.ACCESS_COOKIE, accessToken, {
             ...this.baseOptions(),
-            maxAge: 1000 * 60 * 15, // 15 mins
+            maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days (matches access JWT lifetime)
         });
         res.cookie(this.REFRESH_COOKIE, refreshToken, {
             ...this.baseOptions(),

@@ -8,18 +8,39 @@ export enum Roles {
 
 const ACCESS_TOKEN_EXPIRES = "30d"; // keep short for access
 const REFRESH_TOKEN_EXPIRES = "15d";
-const WEBHOOK_TOKEN_EXPIRES = "365d";
+
+const KNOWN_WEAK_SECRETS = new Set([
+  "dev-only-secret-change-me",
+  "change-me-before-production",
+  "secret",
+  "jwt_secret",
+  "your-secret-here",
+  "mysecret",
+  "password",
+  "test",
+]);
 
 // ✅ Always read secret from env at runtime (not once at import)
 export function getJwtSecret() {
   const s = process.env.JWT_SECRET?.trim();
 
-  // In production: MUST be set (avoid random invalid signature issues)
-  if (process.env.NODE_ENV === "production" && !s) {
-    throw new Error("JWT_SECRET is missing in production");
+  if (!s || KNOWN_WEAK_SECRETS.has(s.toLowerCase())) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "JWT_SECRET is missing or set to a known-weak default value. " +
+        "Generate a strong secret with: node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\""
+      );
+    }
+    // Dev fallback — only acceptable on localhost
+    if (!s) return "dev-only-secret-change-me";
   }
 
-  // Dev fallback (ok for localhost only)
+  if (s && s.length < 32) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET must be at least 32 characters in production.");
+    }
+  }
+
   return s || "dev-only-secret-change-me";
 }
 
@@ -79,13 +100,19 @@ export function signRefreshToken(payload: Record<string, any>) {
 }
 
 export interface AuthRequest extends Request {
-  auth?: { userId: string; roles?: Roles[] };
+  auth?: {
+    userId: string;
+    roles?: Roles[];
+    subscriptionId?: string;
+    planId?: number;
+    tokenType?: "access" | "webhook";
+  };
 }
 
 /**
  * ✅ Bearer token guard (your old flow)
  */
-export function requireAuth(roles?: Roles[]) {
+export function requireAuth(_roles?: Roles[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     console.log("[AUTH] requireAuth:", req.method, req.originalUrl);
 
@@ -140,6 +167,15 @@ export function requireAuth(roles?: Roles[]) {
       req.auth = {
         userId: String(decoded.userId),
         roles: decoded.roles || [],
+        subscriptionId:
+          decoded.subscriptionId !== undefined && decoded.subscriptionId !== null
+            ? String(decoded.subscriptionId)
+            : undefined,
+        planId:
+          decoded.planId !== undefined && decoded.planId !== null
+            ? Number(decoded.planId)
+            : undefined,
+        tokenType: decoded.type,
       };
       if(req.auth.roles?.length === 0){
         req.auth.roles = [Roles.USER]
@@ -152,15 +188,14 @@ export function requireAuth(roles?: Roles[]) {
         req.auth.roles
       );
 
-      // // 🔐 Role check
-      // if (roles && roles.length) {
-      //   const hasRole = roles.some((r) => decoded.roles.includes(r));
-      //     console.log("hasRole ::: ",decoded)
-      //   if (!hasRole) {
-      //     console.log("[AUTH] ❌ role mismatch");
-      //     return res.status(403).json({ message: "Forbidden" });
-      //   }
-      // }
+      if (_roles && _roles.length) {
+        const tokenRoles = req.auth.roles ?? [];
+        const hasRole = _roles.some((role) => tokenRoles.includes(role));
+        if (!hasRole) {
+          console.log("[AUTH] ❌ role mismatch");
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
 
       return next();
     } catch (err: any) {

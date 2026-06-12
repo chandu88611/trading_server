@@ -2,7 +2,6 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
   JoinColumn,
@@ -27,6 +26,12 @@ export class TradeSignalStatus {
 
   @Column({ name: "attempts", type: "int", default: 0 })
   attempts!: number;
+
+  @Column({ name: "last_error", type: "text", nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "next_retry_at", type: "timestamptz", nullable: true })
+  nextRetryAt!: Date | null;
 
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;

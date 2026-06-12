@@ -1,6 +1,9 @@
 // src/app/tradingAccount/services/tradingAccount.service.ts
 import AppDataSource from "../../../db/data-source";
-import { TradingAccountDBService } from "./tradingAccount.db";
+import {
+  StrategyExecutionResolution,
+  TradingAccountDBService,
+} from "./tradingAccount.db";
 import { HttpStatusCode } from "../../../types/constants";
 
 export type CreateTradingAccountPayload = {
@@ -36,9 +39,55 @@ export class TradingAccountService {
         
       return userTradingAccounts;
     } catch (error) {
+      const statusCode = Number((error as any)?.statusCode ?? 0);
+      const message = String((error as any)?.message ?? "");
+      if (statusCode === HttpStatusCode._NOT_FOUND || message === "no_active_master_account_found") {
+        return [];
+      }
+
+      const errMsg = error instanceof Error
+        ? error.message
+        : typeof (error as any)?.message === "string"
+          ? (error as any).message
+          : String(error);
+
       throw {
         statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
         message: "failed_to_list_copy_trading_accounts",
+        error: errMsg,
+      };
+    }
+  }
+
+  async resolveStrategyExecutionTargets(
+    userId: number,
+    subscriptionId: number,
+    brokerIds: number[],
+  ): Promise<StrategyExecutionResolution> {
+    try {
+      return await this.db.resolveStrategyExecutionTargets(userId, subscriptionId, brokerIds);
+    } catch (error) {
+      const errMsg = error instanceof Error
+        ? error.message
+        : typeof (error as any)?.message === "string"
+          ? (error as any).message
+          : String(error);
+
+      throw {
+        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
+        message: "failed_to_resolve_strategy_execution_targets",
+        error: errMsg,
+      };
+    }
+  }
+
+  async listAllMyAccounts(userId: number) {
+    try {
+      return await this.db.listAllByUser(userId);
+    } catch (error) {
+      throw {
+        statusCode: HttpStatusCode._INTERNAL_SERVER_ERROR,
+        message: "failed_to_list_trading_accounts",
         error: error instanceof Error ? error.message : String(error),
       };
     }

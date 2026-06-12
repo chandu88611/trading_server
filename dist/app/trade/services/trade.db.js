@@ -11,8 +11,8 @@ const typeorm_1 = require("typeorm");
 const constants_1 = require("../../../types/constants");
 class TradeDBService {
     constructor() {
-        this.snapshotRepo = data_source_1.default.getRepository(entity_1.AlertSnapshot);
         this.signalRepo = data_source_1.default.getRepository(entity_1.TradeSignal);
+        this.adminStrategyTradeRepo = data_source_1.default.getRepository(entity_1.AdminStrategyTrade);
     }
     async getAllTradeForUser({ userId, accountId, start, count, searchParams, status }) {
         try {
@@ -64,8 +64,9 @@ class TradeDBService {
             throw error;
         }
     }
-    async getHistoryForTrade({ userId, accountId, start, count, searchParams, status }) {
+    async getHistoryForTrade({ userId, accountId, start, count, searchParams, status: _status }) {
         try {
+            void _status;
             let data = await this.signalRepo.createQueryBuilder("ts")
                 .leftJoinAndSelect("ts.tradingAccount", "ta")
                 .leftJoinAndSelect("ts.status", "tss")
@@ -117,6 +118,160 @@ class TradeDBService {
                 .execute();
             return {
                 message: `${updateSignalStatus.affected} trade(s) closed successfully`,
+            };
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async listAdminStrategyTrades(query) {
+        try {
+            const start = Number.isFinite(query.start) && query.start >= 0 ? query.start : 0;
+            const count = Number.isFinite(query.count) && query.count > 0 ? query.count : 20;
+            const qb = this.adminStrategyTradeRepo
+                .createQueryBuilder("adminTrade")
+                .leftJoinAndSelect("adminTrade.strategy", "strategy")
+                .leftJoinAndSelect("adminTrade.plan", "plan")
+                .orderBy("adminTrade.createdAt", "DESC")
+                .skip(start)
+                .take(count);
+            if (query.strategyId) {
+                qb.andWhere("adminTrade.strategyId = :strategyId", { strategyId: query.strategyId });
+            }
+            if (query.planId) {
+                qb.andWhere("adminTrade.planId = :planId", { planId: query.planId });
+            }
+            if (query.status) {
+                qb.andWhere("adminTrade.status = :status", { status: query.status });
+            }
+            if (query.from) {
+                qb.andWhere("adminTrade.createdAt >= :from", { from: query.from });
+            }
+            if (query.to) {
+                qb.andWhere("adminTrade.createdAt <= :to", { to: query.to });
+            }
+            const [data, total] = await qb.getManyAndCount();
+            return {
+                data,
+                pagination: {
+                    start,
+                    count,
+                    total,
+                },
+            };
+        }
+        catch (error) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._INTERNAL_SERVER_ERROR,
+                message: "database_error_fetching_admin_strategy_trades",
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    }
+    async getAdminStrategyTrade(adminStrategyTradeId) {
+        try {
+            const adminStrategyTrade = await this.adminStrategyTradeRepo.findOne({
+                where: { id: adminStrategyTradeId },
+                relations: {
+                    strategy: true,
+                    plan: true,
+                },
+            });
+            if (!adminStrategyTrade) {
+                throw {
+                    statusCode: constants_1.HttpStatusCode._NOT_FOUND,
+                    message: "admin_strategy_trade_not_found",
+                };
+            }
+            const userTrades = await this.signalRepo
+                .createQueryBuilder("ts")
+                .leftJoin("ts.status", "tss")
+                .leftJoin("ts.tradingAccount", "ta")
+                .leftJoin("ts.user", "user")
+                .leftJoin("ts.alertSnapshot", "snapshot")
+                .where("ts.adminStrategyTradeId = :adminStrategyTradeId", { adminStrategyTradeId })
+                .select([
+                "ts.id AS id",
+                "ts.userId AS \"userId\"",
+                "user.email AS \"userEmail\"",
+                "user.name AS \"userName\"",
+                "ts.tradingAccountId AS \"tradingAccountId\"",
+                "ta.accountId AS \"brokerAccountId\"",
+                "ta.accountLabel AS \"accountLabel\"",
+                "ts.action AS action",
+                "ts.symbol AS symbol",
+                "ts.exchange AS exchange",
+                "ts.price AS price",
+                "ts.volume AS volume",
+                "ts.executionMode AS \"executionMode\"",
+                "ts.entryRef AS \"entryRef\"",
+                "ts.orderId AS \"orderId\"",
+                "ts.brokerOrderId AS \"brokerOrderId\"",
+                "ts.brokerPositionId AS \"brokerPositionId\"",
+                "tss.status AS status",
+                "tss.lastError AS \"lastError\"",
+                "ts.alertSnapshotsId AS \"alertSnapshotId\"",
+                "snapshot.alertTime AS \"alertTime\"",
+                "ts.createdAt AS \"createdAt\"",
+                "ts.updatedAt AS \"updatedAt\"",
+            ])
+                .orderBy("ts.createdAt", "DESC")
+                .getRawMany();
+            return {
+                adminStrategyTrade,
+                userTrades,
+            };
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    async closeAdminStrategyTrade(adminStrategyTradeId, queryRunner) {
+        try {
+            const adminStrategyTrade = await queryRunner.manager
+                .getRepository(entity_1.AdminStrategyTrade)
+                .findOne({ where: { id: adminStrategyTradeId } });
+            if (!adminStrategyTrade) {
+                throw {
+                    statusCode: constants_1.HttpStatusCode._NOT_FOUND,
+                    message: "admin_strategy_trade_not_found",
+                };
+            }
+            const totalLinkedTrades = await queryRunner.manager
+                .getRepository(entity_1.TradeSignal)
+                .createQueryBuilder("ts")
+                .where("ts.adminStrategyTradeId = :adminStrategyTradeId", { adminStrategyTradeId })
+                .getCount();
+            const signalsToClose = await queryRunner.manager
+                .getRepository(entity_1.TradeSignal)
+                .createQueryBuilder("ts")
+                .innerJoin("ts.status", "tss")
+                .where("ts.adminStrategyTradeId = :adminStrategyTradeId", { adminStrategyTradeId })
+                .andWhere("tss.status = :status", { status: "completed" })
+                .select(["ts.id"])
+                .getMany();
+            const signalIds = signalsToClose.map((signal) => Number(signal.id));
+            let queuedCloseCount = 0;
+            if (signalIds.length > 0) {
+                const updateSignalStatus = await queryRunner.manager
+                    .getRepository(entity_1.TradeSignalStatus)
+                    .createQueryBuilder()
+                    .update(entity_1.TradeSignalStatus)
+                    .set({ status: "pending_close", updatedAt: new Date() })
+                    .where("tradeSignalId IN (:...signalIds)", { signalIds })
+                    .andWhere("status = :status", { status: "completed" })
+                    .execute();
+                queuedCloseCount = Number(updateSignalStatus.affected ?? 0);
+            }
+            await queryRunner.manager.getRepository(entity_1.AdminStrategyTrade).update({ id: adminStrategyTradeId }, {
+                closeQueuedCount: Number(adminStrategyTrade.closeQueuedCount ?? 0) + queuedCloseCount,
+                status: queuedCloseCount > 0 ? "close_requested" : adminStrategyTrade.status,
+            });
+            return {
+                adminStrategyTradeId,
+                queuedCloseCount,
+                skippedCount: Math.max(totalLinkedTrades - queuedCloseCount, 0),
+                signalIds,
             };
         }
         catch (error) {

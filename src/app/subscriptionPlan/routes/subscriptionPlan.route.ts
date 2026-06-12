@@ -23,19 +23,19 @@ export class SubscriptionPlanRouter {
 
     this.router.post(
       "/subscription-plan",
-      // requireAuth([Roles.ADMIN]),
+      requireAuth([Roles.ADMIN]),
       controller.createPlan.bind(controller)
     );
 
     this.router.patch(
       "/subscription-plan/:planId",
-      // requireAuth([Roles.ADMIN]),
+      requireAuth([Roles.ADMIN]),
       controller.updatePlan.bind(controller)
     );
 
     this.router.delete(
       "/subscription-plan/:planId",
-      // requireAuth([Roles.ADMIN]),
+      requireAuth([Roles.ADMIN]),
       controller.deletePlan.bind(controller)
     );
 
@@ -46,6 +46,18 @@ export class SubscriptionPlanRouter {
     );
 
     this.router.get("/subscription-plan/list", controller.getActive.bind(controller));
+
+    this.router.get(
+      "/subscription-plan/:planId/webhook-token",
+      requireAuth([Roles.ADMIN]),
+      controller.getAdminWebhookToken.bind(controller)
+    );
+
+    this.router.post(
+      "/subscription-plan/:planId/webhook-token/rotate",
+      requireAuth([Roles.ADMIN]),
+      controller.rotateAdminWebhookToken.bind(controller)
+    );
   }
 
   getRouter() {

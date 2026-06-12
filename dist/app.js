@@ -1,141 +1,124 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 require("reflect-metadata");
 const express_1 = __importDefault(require("express"));
+const path_1 = __importDefault(require("path"));
 const dotenv_1 = __importDefault(require("dotenv"));
-const data_source_1 = __importDefault(require("./db/data-source"));
+const data_source_1 = __importStar(require("./db/data-source"));
 const kite_1 = require("./kite");
 const validateSchema_1 = __importDefault(require("./db/validateSchema"));
 const routes_1 = require("./app/routes");
 const cors_1 = __importDefault(require("cors"));
-const body_parser_1 = __importDefault(require("body-parser"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
-const ws_1 = __importDefault(require("ws"));
-const crypto_1 = __importDefault(require("crypto"));
-require("./cron/ctrader-exec.worker");
+const openapi_1 = require("./docs/openapi");
+const crmLifecycleSync_service_1 = require("./app/integrations/crm/services/crmLifecycleSync.service");
+const supportTicket_service_1 = require("./app/support/services/supportTicket.service");
+const strategy_1 = require("./app/strategy/strategy");
+const subscriptionPlan_1 = require("./app/subscriptionPlan/services/subscriptionPlan");
+const userSubscription_1 = require("./app/userSubscription/services/userSubscription");
+const user_service_1 = require("./app/user/services/user.service");
+const billing_db_1 = require("./app/billing/services/billing.db");
+const alertSnapshot_db_1 = require("./app/broker/brokerAlerts/services/alertSnapshot.db");
+const tradeAlert_db_1 = require("./app/trade/services/tradeAlert.db");
+const cTrader_1 = require("./app/cTraderListener/services/cTrader");
+const mt5Listener_services_1 = require("./app/mt5Listener/mt5Listener.services");
+const mt5Listener_db_1 = require("./app/mt5Listener/mt5Listener.db");
+const auth_1 = require("./middleware/auth");
+const admin_service_1 = require("./app/admin/admin.service");
+const copyExecution_service_1 = require("./app/copyExecution/copyExecution.service");
 dotenv_1.default.config();
-const CTRADER_CLIENT_ID = (process.env.CTRADER_CLIENT_ID || "").trim();
-const CTRADER_CLIENT_SECRET = (process.env.CTRADER_CLIENT_SECRET || "").trim();
-const CTRADER_REDIRECT_URI = (process.env.CTRADER_REDIRECT_URI || "").trim();
-const CTRADER_ENV = (process.env.CTRADER_ENV || "live").trim();
-const GRANT_URL = "https://id.ctrader.com/my/settings/openapi/grantingaccess/";
-const TOKEN_URL = "https://openapi.ctrader.com/apps/token";
-const PT = {
-    ERROR_RES: 50,
-    HEARTBEAT_EVENT: 51,
-    OA_APPLICATION_AUTH_REQ: 2100,
-    OA_APPLICATION_AUTH_RES: 2101,
-    OA_ACCOUNT_AUTH_REQ: 2102,
-    OA_ACCOUNT_AUTH_RES: 2103,
-    OA_TRADER_REQ: 2121,
-    OA_TRADER_RES: 2122,
-    OA_GET_ACCOUNT_LIST_BY_ACCESS_TOKEN_REQ: 2149,
-    OA_GET_ACCOUNT_LIST_BY_ACCESS_TOKEN_RES: 2150,
-    OA_ERROR_RES: 2142,
-};
+const DEFAULT_JSON_LIMIT = "100kb";
+const CTRADER_SYMBOL_CACHE_JSON_LIMIT = "5mb";
+function captureRawBody(req, _res, buf) {
+    if (req.originalUrl?.startsWith("/billing/razorpay/webhook") ||
+        req.originalUrl?.startsWith("/billing/razorpayx/webhook")) {
+        req.rawBody = buf;
+    }
+}
+function isPayloadTooLargeError(err) {
+    const anyErr = err;
+    return (anyErr?.type === "entity.too.large" ||
+        Number(anyErr?.status) === 413 ||
+        Number(anyErr?.statusCode) === 413);
+}
+function isCTraderSymbolReplaceRequest(req) {
+    const path = String(req.originalUrl ?? req.path ?? "").split("?")[0];
+    return (req.method.toUpperCase() === "PUT" &&
+        /^\/ctrader\/symbols\/[^/]+\/(?:demo|live)\/[^/]+$/.test(path));
+}
+function isMt5StateSyncRequest(req) {
+    const path = String(req.originalUrl ?? req.path ?? "").split("?")[0];
+    return req.method.toUpperCase() === "POST" && path === "/signal/state";
+}
 class Server {
     constructor() {
         this.app = (0, express_1.default)();
         this.port = Number(process.env.PORT) || 3000;
+        this.crmSyncService = new crmLifecycleSync_service_1.CrmLifecycleSyncService();
+        this.supportTicketService = new supportTicket_service_1.SupportTicketService();
+        this.strategyService = new strategy_1.StrategyService();
+        this.subscriptionPlanService = new subscriptionPlan_1.SubscriptionPlanService();
+        this.userSubscriptionService = new userSubscription_1.UserSubscriptionService();
+        this.userService = new user_service_1.UserService();
+        this.billingDb = new billing_db_1.BillingDBService();
+        this.alertSnapshotDB = new alertSnapshot_db_1.AlertSnapshotDB();
+        this.tradeAlertDB = new tradeAlert_db_1.TradeAlertDBService();
+        this.cTraderService = new cTrader_1.CTraderService();
+        this.mt5ListenerService = new mt5Listener_services_1.Mt5ListenerServices(new mt5Listener_db_1.Mt5ListenerDBServices(data_source_1.default));
+        this.adminService = new admin_service_1.AdminService();
+        this.copyExecutionService = new copyExecution_service_1.CopyExecutionService();
         this.config();
         this.routes();
     }
-    wsEndpoint(env) {
-        const e = (env || "demo").toLowerCase() === "live" ? "live" : "demo";
-        return `wss://${e}.ctraderapi.com:5036`;
-    }
-    uid() {
-        return crypto_1.default.randomUUID();
-    }
-    startOpenApiSession({ accessToken, preferredEnv }) {
-        return new Promise((resolve, reject) => {
-            const endpoint = this.wsEndpoint(preferredEnv || CTRADER_ENV);
-            console.log("[cTrader][WS] connecting:", endpoint);
-            const ws = new ws_1.default(endpoint, { rejectUnauthorized: true });
-            let heartbeatTimer = null;
-            let pickedAccount = null;
-            const send = (payloadType, payload, clientMsgId = this.uid()) => {
-                const msg = { clientMsgId, payloadType, payload };
-                ws.send(JSON.stringify(msg));
-            };
-            ws.on("open", () => {
-                console.log("[cTrader][WS] connected");
-                heartbeatTimer = setInterval(() => {
-                    try {
-                        send(PT.HEARTBEAT_EVENT, {});
-                    }
-                    catch { }
-                }, 25000);
-                send(PT.OA_APPLICATION_AUTH_REQ, {
-                    clientId: CTRADER_CLIENT_ID,
-                    clientSecret: CTRADER_CLIENT_SECRET,
-                });
-            });
-            ws.on("message", (data) => {
-                const text = data.toString("utf8");
-                let msg;
-                try {
-                    msg = JSON.parse(text);
-                }
-                catch {
-                    console.log("[cTrader][WS] non-json message:", text);
-                    return;
-                }
-                const { payloadType, payload } = msg;
-                if (payloadType === PT.ERROR_RES) {
-                    console.error("[cTrader][ProtoErrorRes]", payload);
-                    return;
-                }
-                if (payloadType === PT.OA_ERROR_RES) {
-                    console.error("[cTrader][ProtoOAErrorRes]", payload);
-                    return;
-                }
-                if (payloadType === PT.OA_APPLICATION_AUTH_RES) {
-                    console.log("[cTrader][OK] Application authorized");
-                    send(PT.OA_GET_ACCOUNT_LIST_BY_ACCESS_TOKEN_REQ, { accessToken });
-                    return;
-                }
-                if (payloadType === PT.OA_GET_ACCOUNT_LIST_BY_ACCESS_TOKEN_RES) {
-                    const accounts = payload?.ctidTraderAccount || [];
-                    console.log(`[cTrader][OK] Accounts returned: ${accounts.length}`);
-                    if (!accounts.length) {
-                        console.error("[cTrader] No accounts returned. Check token/scope/grant.");
-                        return;
-                    }
-                    pickedAccount = accounts[0];
-                    send(PT.OA_ACCOUNT_AUTH_REQ, {
-                        ctidTraderAccountId: pickedAccount.ctidTraderAccountId,
-                        accessToken,
-                    });
-                    return;
-                }
-                if (payloadType === PT.OA_ACCOUNT_AUTH_RES) {
-                    console.log("[cTrader][OK] Account authorized:", payload?.ctidTraderAccountId);
-                    send(PT.OA_TRADER_REQ, {
-                        ctidTraderAccountId: payload.ctidTraderAccountId,
-                    });
-                    return;
-                }
-                if (payloadType === PT.OA_TRADER_RES) {
-                    console.log("[cTrader][OK] Trader info received");
-                    resolve({ ws, trader: payload, account: pickedAccount });
-                    return;
-                }
-            });
-            ws.on("close", () => {
-                if (heartbeatTimer)
-                    clearInterval(heartbeatTimer);
-                console.log("[cTrader][WS] closed");
-            });
-            ws.on("error", (err) => {
-                if (heartbeatTimer)
-                    clearInterval(heartbeatTimer);
-                reject(err);
-            });
-        });
+    async bootstrapBackgroundWorkers() {
+        if (Server.backgroundWorkersStarted) {
+            return;
+        }
+        await Promise.all([
+            Promise.resolve().then(() => __importStar(require("./cron/ctrader-exec.worker"))),
+            Promise.resolve().then(() => __importStar(require("./cron/dhan-exec.worker"))),
+            Promise.resolve().then(() => __importStar(require("./cron/zebu-exec.worker"))),
+            Promise.resolve().then(() => __importStar(require("./cron/coindcx-exec.worker"))),
+            Promise.resolve().then(() => __importStar(require("./cron/crm-sync.cron"))),
+            Promise.resolve().then(() => __importStar(require("./cron/stale-jobs.worker"))),
+        ]);
+        Server.backgroundWorkersStarted = true;
     }
     config() {
         const allowedOrigins = [
@@ -146,6 +129,7 @@ class Server {
             "http://localhost:3000",
             "https://globalalgotrading.com",
             "https://tradebro.io",
+            "https://admin.tradebro.io"
         ].filter(Boolean);
         this.app.use((0, cors_1.default)({
             origin: (origin, cb) => {
@@ -156,23 +140,36 @@ class Server {
                 return cb(new Error("CORS blocked"), false);
             },
             credentials: true,
-            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allowedHeaders: ["Content-Type", "Authorization"],
+            methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+            allowedHeaders: ["Content-Type", "Authorization", "X-Poll-Key"],
         }));
         this.app.use((0, cookie_parser_1.default)());
-        this.app.use(express_1.default.json());
-        this.app.use(express_1.default.urlencoded({ extended: true }));
+        this.app.use("/uploads", express_1.default.static(path_1.default.resolve(process.cwd(), "uploads")));
     }
     routes() {
-        this.app.use(body_parser_1.default.json({
-            verify: (req, res, buf) => {
-                if (req.originalUrl?.startsWith("/stripe/webhook")) {
-                    req.rawBody = buf;
-                }
-            },
+        this.app.put("/ctrader/symbols/:userId/:env/:accountId", express_1.default.json({
+            limit: CTRADER_SYMBOL_CACHE_JSON_LIMIT,
+            verify: captureRawBody,
+        }), (_req, _res, next) => next());
+        this.app.post("/signal/state", express_1.default.json({
+            limit: CTRADER_SYMBOL_CACHE_JSON_LIMIT,
+            verify: captureRawBody,
+        }), (_req, _res, next) => next());
+        this.app.use(express_1.default.json({
+            limit: DEFAULT_JSON_LIMIT,
+            verify: captureRawBody,
         }));
+        this.app.use(express_1.default.urlencoded({ extended: true, limit: DEFAULT_JSON_LIMIT }));
         this.app.use("/", new routes_1.ApplicationRouter().getRouter());
         this.app.get("/health", (_, res) => res.send("OK"));
+        this.app.get("/api/openapi.json", (_req, res) => {
+            res.status(200).json((0, openapi_1.getTradingOpenApi)());
+        });
+        this.app.get("/api/docs", (_req, res) => {
+            res
+                .status(200)
+                .send(`<!doctype html><html><head><title>Trading Service Docs</title><style>body{font-family:Arial,sans-serif;padding:32px;max-width:1000px;margin:0 auto}pre{white-space:pre-wrap;background:#111827;color:#f9fafb;padding:16px;border-radius:8px}</style></head><body><h1>Trading Service Docs</h1><p>OpenAPI JSON: <a href="/api/openapi.json">/api/openapi.json</a></p><pre>${JSON.stringify((0, openapi_1.getTradingOpenApi)(), null, 2)}</pre></body></html>`);
+        });
         // this.app.get("/ctrader/auth", (_req, res) => {
         //   if (
         //     !CTRADER_CLIENT_ID ||
@@ -229,17 +226,42 @@ class Server {
         //     return res.status(500).send("Token exchange failed. Check logs.");
         //   }
         // });
+        this.app.use((err, req, res, next) => {
+            if (!isPayloadTooLargeError(err)) {
+                next(err);
+                return;
+            }
+            const route = isCTraderSymbolReplaceRequest(req)
+                ? "ctrader_symbols_replace"
+                : isMt5StateSyncRequest(req)
+                    ? "mt5_symbol_state"
+                    : "request_body";
+            res.status(413).json({ error: "payload_too_large", route });
+        });
     }
     async start() {
         try {
-            if (!data_source_1.default.isInitialized) {
-                await data_source_1.default.initialize();
-            }
+            (0, auth_1.getJwtSecret)();
+            await (0, data_source_1.ensureAppDataSourceInitialized)();
+            await this.crmSyncService.ensureSchema();
+            await this.supportTicketService.ensureSchema();
+            await this.userService.ensureSchema();
+            await this.userSubscriptionService.ensureSchema();
+            await this.subscriptionPlanService.ensureSchema();
+            await this.billingDb.ensureSchema();
+            await this.strategyService.ensureSchema();
+            await this.alertSnapshotDB.ensureSchema();
+            await this.tradeAlertDB.ensureSchema();
+            await this.cTraderService.ensureSchema();
+            await this.mt5ListenerService.ensureSchema();
+            await this.adminService.ensureSchema();
+            await this.copyExecutionService.ensureSchema();
             const enableSchemaValidation = String(process.env.ENABLE_SCHEMA_VALIDATION || "").toLowerCase() ===
                 "true";
             if (enableSchemaValidation) {
                 await (0, validateSchema_1.default)(data_source_1.default);
             }
+            await this.bootstrapBackgroundWorkers();
             (0, kite_1.initKite)().catch(console.error);
             this.app.listen(this.port, () => {
                 console.log(`🚀 Server running on ${this.port}`);
@@ -251,4 +273,5 @@ class Server {
         }
     }
 }
+Server.backgroundWorkersStarted = false;
 exports.default = Server;

@@ -21,10 +21,14 @@ export class ZebuRouter {
 		this.router.post("/orders/cancel", requireAuth([Roles.USER, Roles.ADMIN]), controller.cancelOrder.bind(controller));
 
 		this.router.post("/orders", requireAuth([Roles.USER, Roles.ADMIN]), controller.getOrders.bind(controller));
+		this.router.get("/orders", requireAuth([Roles.USER, Roles.ADMIN]), controller.getOrders.bind(controller));
 		this.router.post("/positions", requireAuth([Roles.USER, Roles.ADMIN]), controller.getPositions.bind(controller));
+		this.router.get("/positions", requireAuth([Roles.USER, Roles.ADMIN]), controller.getPositions.bind(controller));
 		this.router.post("/holdings", requireAuth([Roles.USER, Roles.ADMIN]), controller.getHoldings.bind(controller));
+		this.router.get("/holdings", requireAuth([Roles.USER, Roles.ADMIN]), controller.getHoldings.bind(controller));
+		this.router.get("/funds", requireAuth([Roles.USER, Roles.ADMIN]), controller.getFunds.bind(controller));
 
-		this.router.post("/execute-pending", requireAuth([Roles.USER, Roles.ADMIN]), controller.executePending.bind(controller));
+		this.router.post("/execute-pending", requireAuth([Roles.ADMIN]), controller.executePending.bind(controller));
 	}
 
 	getRouter() {

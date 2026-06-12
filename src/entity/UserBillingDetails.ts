@@ -49,6 +49,12 @@ export class UserBillingDetails {
   @Column({ name: "pincode", type: "varchar", length: 10, nullable: true })
   pincode?: string | null;
 
+  @Column({ name: "razorpay_contact_id", type: "text", nullable: true })
+  razorpayContactId?: string | null;
+
+  @Column({ name: "razorpay_fund_account_id", type: "text", nullable: true })
+  razorpayFundAccountId?: string | null;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 

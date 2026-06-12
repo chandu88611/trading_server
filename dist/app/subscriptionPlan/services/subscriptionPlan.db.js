@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SubscriptionPlanDBService = void 0;
+// src/app/subscriptionPlan/services/subscriptionPlan.db.ts
+const crypto_1 = __importDefault(require("crypto"));
 const data_source_1 = __importDefault(require("../../../db/data-source"));
 const SubscriptionPlan_1 = require("../../../entity/SubscriptionPlan");
 const PlanType_1 = require("../../../entity/PlanType");
@@ -13,12 +15,68 @@ const PlanLimits_1 = require("../../../entity/PlanLimits");
 const PlanFeature_1 = require("../../../entity/PlanFeature");
 const PlanBundleItem_1 = require("../../../entity/PlanBundleItem");
 const PlanStrategy_1 = require("../../../entity/PlanStrategy");
+const Strategy_1 = require("../../../entity/Strategy");
+const PlanAdminWebhookToken_1 = require("../../../entity/PlanAdminWebhookToken");
 const badRequest = (message) => ({ statusCode: 400, message });
 class SubscriptionPlanDBService {
     constructor() {
         this.planRepo = data_source_1.default.getRepository(SubscriptionPlan_1.SubscriptionPlan);
+        this.adminWebhookTokenRepo = data_source_1.default.getRepository(PlanAdminWebhookToken_1.PlanAdminWebhookToken);
         this.typeRepo = data_source_1.default.getRepository(PlanType_1.PlanType);
         this.marketRepo = data_source_1.default.getRepository(Market_1.Market);
+        this.strategyRepo = data_source_1.default.getRepository(Strategy_1.Strategy);
+    }
+    newAdminWebhookToken() {
+        return crypto_1.default.randomBytes(24).toString("hex");
+    }
+    async ensureSchema() {
+        await data_source_1.default.query(`
+      ALTER TABLE subscription_plans
+      ADD COLUMN IF NOT EXISTS admin_webhook_token TEXT;
+    `);
+        await data_source_1.default.query(`
+      CREATE TABLE IF NOT EXISTS subscription_plan_admin_webhook_tokens (
+        id BIGSERIAL PRIMARY KEY,
+        plan_id BIGINT NOT NULL UNIQUE REFERENCES subscription_plans(id) ON DELETE CASCADE,
+        token TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+        await data_source_1.default.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_plan_admin_webhook_tokens_plan_id
+      ON subscription_plan_admin_webhook_tokens(plan_id);
+    `);
+        await data_source_1.default.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_plan_admin_webhook_tokens_token
+      ON subscription_plan_admin_webhook_tokens(token);
+    `);
+        await data_source_1.default.query(`
+      INSERT INTO subscription_plan_admin_webhook_tokens (plan_id, token)
+      SELECT id, admin_webhook_token
+      FROM subscription_plans
+      WHERE admin_webhook_token IS NOT NULL
+      ON CONFLICT DO NOTHING;
+    `);
+        const duplicatePlanStrategies = await data_source_1.default.query(`
+      SELECT plan_id, COUNT(*)::int AS strategy_count
+      FROM plan_strategies
+      GROUP BY plan_id
+      HAVING COUNT(*) > 1
+      ORDER BY plan_id
+      LIMIT 10;
+    `);
+        if (Array.isArray(duplicatePlanStrategies) && duplicatePlanStrategies.length > 0) {
+            console.warn("[SubscriptionPlanDBService.ensureSchema] duplicate plan_strategies rows detected; skipping uq_plan_strategies_plan_id creation until data cleanup is completed", duplicatePlanStrategies.map((row) => ({
+                planId: Number(row.plan_id),
+                strategyCount: Number(row.strategy_count),
+            })));
+            return;
+        }
+        await data_source_1.default.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_strategies_plan_id
+      ON plan_strategies(plan_id);
+    `);
     }
     async createPlan(payload) {
         const planType = await this.typeRepo.findOne({
@@ -31,6 +89,14 @@ class SubscriptionPlanDBService {
             : await this.marketRepo.findOne({ where: { code: payload.marketCode } });
         if (payload.marketCode != null && !market) {
             throw badRequest(`Invalid marketCode=${payload.marketCode}`);
+        }
+        let strategy = null;
+        if (payload.strategyId !== undefined && payload.strategyId !== null) {
+            strategy = await this.strategyRepo.findOne({
+                where: { id: payload.strategyId },
+            });
+            if (!strategy)
+                throw badRequest(`Invalid strategyId=${payload.strategyId}`);
         }
         return data_source_1.default.transaction(async (trx) => {
             const planRepo = trx.getRepository(SubscriptionPlan_1.SubscriptionPlan);
@@ -80,13 +146,12 @@ class SubscriptionPlanDBService {
                 await featureRepo.insert(rows);
             }
             // strategies mapping (insert bulk)
-            if (payload.strategyIds?.length) {
+            if (strategy) {
                 const psRepo = trx.getRepository(PlanStrategy_1.PlanStrategy);
-                const uniq = Array.from(new Set(payload.strategyIds));
-                const rows = uniq.map((sid) => ({
-                    planId: savedPlan.id,
-                    strategyId: sid,
-                }));
+                const rows = [{
+                        planId: savedPlan.id,
+                        strategyId: Number(strategy.id),
+                    }];
                 await psRepo.insert(rows);
             }
             // bundle items (insert bulk)
@@ -151,6 +216,14 @@ class SubscriptionPlanDBService {
                     updatePlan.marketId = mk.id;
                 }
             }
+            let strategy = null;
+            if (payload.strategyId !== undefined && payload.strategyId !== null) {
+                strategy = await trx.getRepository(Strategy_1.Strategy).findOne({
+                    where: { id: payload.strategyId },
+                });
+                if (!strategy)
+                    throw badRequest(`Invalid strategyId=${payload.strategyId}`);
+            }
             if (Object.keys(updatePlan).length > 0) {
                 await planRepo.update({ id }, updatePlan);
             }
@@ -206,15 +279,14 @@ class SubscriptionPlanDBService {
                 }
             }
             // strategies replace-all
-            if (payload.strategyIds !== undefined) {
+            if (payload.strategyId !== undefined) {
                 const psRepo = trx.getRepository(PlanStrategy_1.PlanStrategy);
                 await psRepo.delete({ planId: id });
-                if (payload.strategyIds && payload.strategyIds.length > 0) {
-                    const uniq = Array.from(new Set(payload.strategyIds));
-                    const rows = uniq.map((sid) => ({
-                        planId: id,
-                        strategyId: sid,
-                    }));
+                if (strategy) {
+                    const rows = [{
+                            planId: id,
+                            strategyId: Number(strategy.id),
+                        }];
                     await psRepo.insert(rows);
                 }
             }
@@ -283,6 +355,56 @@ class SubscriptionPlanDBService {
         if (marketCode)
             qb.andWhere("m.code = :mc", { mc: marketCode });
         return qb.getMany();
+    }
+    async getAdminWebhookToken(planId) {
+        const plan = await this.planRepo.findOne({
+            where: { id: planId },
+            select: ["id"],
+        });
+        if (!plan) {
+            return null;
+        }
+        const existing = await this.adminWebhookTokenRepo.findOne({
+            where: { planId },
+        });
+        if (existing?.token) {
+            return existing.token;
+        }
+        const created = this.adminWebhookTokenRepo.create({
+            planId,
+            token: this.newAdminWebhookToken(),
+        });
+        const saved = await this.adminWebhookTokenRepo.save(created);
+        return saved.token;
+    }
+    async rotateAdminWebhookToken(planId) {
+        const nextToken = this.newAdminWebhookToken();
+        const existing = await this.adminWebhookTokenRepo.findOne({
+            where: { planId },
+        });
+        if (!existing) {
+            await this.adminWebhookTokenRepo.save(this.adminWebhookTokenRepo.create({
+                planId,
+                token: nextToken,
+            }));
+            return nextToken;
+        }
+        existing.token = nextToken;
+        existing.updatedAt = new Date();
+        await this.adminWebhookTokenRepo.save(existing);
+        return nextToken;
+    }
+    async findPlanByAdminWebhookToken(token) {
+        const tokenRow = await this.adminWebhookTokenRepo
+            .createQueryBuilder("planWebhook")
+            .leftJoinAndSelect("planWebhook.plan", "plan")
+            .leftJoinAndSelect("plan.market", "market")
+            .leftJoinAndSelect("plan.planStrategies", "planStrategies")
+            .leftJoinAndSelect("planStrategies.strategy", "strategy")
+            .where("planWebhook.token = :token", { token })
+            .andWhere("plan.is_active = true")
+            .getOne();
+        return tokenRow?.plan ?? null;
     }
 }
 exports.SubscriptionPlanDBService = SubscriptionPlanDBService;

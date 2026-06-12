@@ -148,6 +148,14 @@ export class DhanController {
 	}
 
 	@ControllerError()
+	async getFunds(req: Request, res: Response) {
+		const userId = this.requireUserId(req);
+		const tradingAccountId = this.requireTradingAccountId(req);
+		const data = await this.service.getFunds(userId, tradingAccountId);
+		return res.json({ data });
+	}
+
+	@ControllerError()
 	async executePending(req: Request, res: Response) {
 		const batchSize = Number((req.body as any)?.batchSize ?? undefined);
 		const data = await this.service.executePendingBatch({

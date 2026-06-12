@@ -14,8 +14,7 @@ import { User } from "./User";
 import { SubscriptionPlan } from "./SubscriptionPlan";
 import { SubscriptionStatus } from "../app/subscriptionPlan/enums/subscriberPlan.enum";
 import { UserTradingAccount } from "./UserTradingAccount";
-import { CopyTradingFollowers } from "./CopyTradingFollow";
-import { Market } from "./Market";
+import { UserStrategyInstance } from "./UserStrategyInstance";
 
 @Entity({ name: "user_subscriptions" })
 export class UserSubscription {
@@ -37,6 +36,9 @@ export class UserSubscription {
   @ManyToOne(() => SubscriptionPlan, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "plan_id" })
   plan!: SubscriptionPlan;
+
+  @Column({ name: "status", type: "text", nullable: true })
+  status!: SubscriptionStatus | null;
 
   @Column({
     name: "status_v2",
@@ -71,11 +73,17 @@ export class UserSubscription {
   @Column({name: "cancel_at", type: "timestamptz", nullable: true})
   cancelAt!: Date | null;
 
+  @Column({ name: "canceled_at", type: "timestamptz", nullable: true })
+  canceledAt!: Date | null;
+
   @Column({ type: "jsonb", nullable: true })
   metadata!: Record<string, any> | null;
 
   @OneToMany(() => UserTradingAccount, (a) => a.subscription)
   tradingAccounts!: UserTradingAccount[];
+
+  @OneToMany(() => UserStrategyInstance, (instance) => instance.subscription)
+  strategyInstances!: UserStrategyInstance[];
 
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;

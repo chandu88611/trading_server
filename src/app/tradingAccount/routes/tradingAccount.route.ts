@@ -8,8 +8,20 @@ export class TradingAccountRouter {
   private controller = new TradingAccountController();
 
   constructor() {
-    // List all accounts for current user
-    
+    // GET /trading-accounts/me — all accounts for the logged-in user (no planId needed)
+    // Must be registered BEFORE /:id to avoid Express matching "me" as an id param
+    this.routes.get(
+      "/me",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.listMyAccountsMe.bind(this.controller)
+    );
+
+    // GET /trading-accounts/:id/poll-key — MT5 poll key for EA configuration
+    this.routes.get(
+      "/:id/poll-key",
+      requireAuth([Roles.USER, Roles.ADMIN]),
+      this.controller.getMt5PollKey.bind(this.controller)
+    );
 
     // Create new account
     this.routes.post(

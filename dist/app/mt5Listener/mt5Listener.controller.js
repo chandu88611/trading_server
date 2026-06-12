@@ -53,6 +53,37 @@ class Mt5ListenerController {
         }
         return payload;
     }
+    normalizeStateBody(body) {
+        if (body == null)
+            return {};
+        if (Buffer.isBuffer(body)) {
+            const parsed = this.parseJson(body.toString("utf8").replace(/\0/g, "").trim());
+            return parsed && typeof parsed === "object" ? parsed : {};
+        }
+        if (typeof body === "string") {
+            const parsed = this.parseJson(body.replace(/\0/g, "").trim());
+            return parsed && typeof parsed === "object" ? parsed : {};
+        }
+        if (typeof body !== "object")
+            return {};
+        const payload = body;
+        const keys = Object.keys(payload);
+        if (keys.length === 1) {
+            const singleKeyRaw = keys[0].replace(/\0/g, "").trim();
+            const parsedSingleKey = this.parseJson(singleKeyRaw);
+            if (parsedSingleKey && typeof parsedSingleKey === "object") {
+                return parsedSingleKey;
+            }
+        }
+        if (keys.length > 1) {
+            const rebuiltFromKeys = keys.join("&").replace(/\0/g, "").trim();
+            const parsedFromKeys = this.parseJson(rebuiltFromKeys);
+            if (parsedFromKeys && typeof parsedFromKeys === "object") {
+                return parsedFromKeys;
+            }
+        }
+        return payload;
+    }
     async listenSignal(req, res) {
         try {
             const brokerAccountId = String(req.query.userId || "");
@@ -78,7 +109,10 @@ class Mt5ListenerController {
         }
     }
     async stateListenSignal(_, res) {
-        return res.json({ ok: true });
+        const brokerAccountId = String((_.query.userId ?? _.query.brokerAccountId ?? "")).trim();
+        const payload = this.normalizeStateBody(_.body);
+        const result = await this.service.handleState(brokerAccountId, payload);
+        return res.json(result);
     }
 }
 exports.Mt5ListenerController = Mt5ListenerController;

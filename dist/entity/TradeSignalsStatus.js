@@ -37,6 +37,14 @@ __decorate([
     __metadata("design:type", Number)
 ], TradeSignalStatus.prototype, "attempts", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: "last_error", type: "text", nullable: true }),
+    __metadata("design:type", Object)
+], TradeSignalStatus.prototype, "lastError", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "next_retry_at", type: "timestamptz", nullable: true }),
+    __metadata("design:type", Object)
+], TradeSignalStatus.prototype, "nextRetryAt", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)({ name: "created_at", type: "timestamptz" }),
     __metadata("design:type", Date)
 ], TradeSignalStatus.prototype, "createdAt", void 0);

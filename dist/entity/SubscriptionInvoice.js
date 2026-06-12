@@ -23,8 +23,8 @@ __decorate([
 ], SubscriptionInvoice.prototype, "id", void 0);
 __decorate([
     (0, typeorm_1.Index)(),
-    (0, typeorm_1.Column)({ name: "subscription_id", type: "bigint" }),
-    __metadata("design:type", Number)
+    (0, typeorm_1.Column)({ name: "subscription_id", type: "bigint", nullable: true }),
+    __metadata("design:type", Object)
 ], SubscriptionInvoice.prototype, "subscriptionId", void 0);
 __decorate([
     (0, typeorm_1.Index)(),

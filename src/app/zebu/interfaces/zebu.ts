@@ -4,13 +4,16 @@ export type ZebuAuthPayload = {
 	accessToken: string;
 	baseUrl?: string;
 	apiKey?: string;
+	uid?: string;
+	actid?: string;
 };
 
 export type ZebuGenerateTokenRequest = {
 	userId: number;
 	tradingAccountId: number;
 	password: string;
-	totp: string;
+	factor2?: string;
+	totp?: string;
 };
 
 export type ZebuOrderPayload = {
@@ -36,6 +39,10 @@ export type ZebuModifyOrderRequest = {
 	userId: number;
 	tradingAccountId: number;
 	orderId: string;
+	symbol?: string;
+	exchange?: string;
+	orderType?: string;
+	product?: string;
 	quantity?: number;
 	price?: number;
 	triggerPrice?: number;
