@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import AppDataSource from "../../db/data-source";
 import { HttpStatusCode } from "../../types/constants";
+import { BrokerInstrumentService } from "../india/options/brokerInstrument.service";
 
 type JsonRecord = Record<string, any>;
 
@@ -41,6 +42,8 @@ function normalizeText(value: unknown, fieldName: string, required = false) {
 }
 
 export class AdminService {
+  private brokerInstrumentService = new BrokerInstrumentService();
+
   async ensureSchema() {
     await AppDataSource.query(`
       CREATE TABLE IF NOT EXISTS admin_settings (
@@ -191,6 +194,13 @@ export class AdminService {
       CREATE INDEX IF NOT EXISTS idx_error_events_created_at
       ON error_events(created_at DESC);
     `);
+  }
+
+  syncBrokerInstruments(segments?: unknown) {
+    const requested = Array.isArray(segments)
+      ? segments.map((segment) => String(segment).trim().toUpperCase()).filter(Boolean)
+      : undefined;
+    return this.brokerInstrumentService.sync(requested);
   }
 
   async recordAudit(args: {

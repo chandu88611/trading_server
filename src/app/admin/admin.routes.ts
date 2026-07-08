@@ -44,5 +44,6 @@ router.get("/copy/strategy-links", controller.listStrategyLinks.bind(controller)
 router.post("/copy/strategy-links", controller.upsertStrategyLink.bind(controller));
 
 router.get("/tradingview/alerts", controller.listTradingViewAlerts.bind(controller));
+router.post("/instruments/sync", controller.syncBrokerInstruments.bind(controller));
 
 export default router;

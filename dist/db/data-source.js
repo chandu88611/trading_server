@@ -82,6 +82,7 @@ exports.AppDataSource = new typeorm_1.DataSource({
         CTraderSymbol_1.CTraderSymbol,
         entity_1.Mt5Symbol,
         entity_1.ZebuProtectionMonitor,
+        entity_1.BrokerInstrument,
     ],
     migrations: [],
     subscribers: [],

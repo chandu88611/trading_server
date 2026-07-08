@@ -23,6 +23,7 @@ var HttpStatusCode;
     HttpStatusCode[HttpStatusCode["_CONFLICT"] = 409] = "_CONFLICT";
     HttpStatusCode[HttpStatusCode["_BAD_GATEWAY"] = 502] = "_BAD_GATEWAY";
     HttpStatusCode[HttpStatusCode["_PRECONDITION_ERROR"] = 412] = "_PRECONDITION_ERROR";
+    HttpStatusCode[HttpStatusCode["_UNPROCESSABLE_ENTITY"] = 422] = "_UNPROCESSABLE_ENTITY";
     HttpStatusCode["ECONNREFUSED"] = "ECONNREFUSED";
 })(HttpStatusCode || (exports.HttpStatusCode = HttpStatusCode = {}));
 var ErrorMessage;

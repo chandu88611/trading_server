@@ -57,9 +57,7 @@ setInterval(async () => {
 			if (!isAnyMarketOpen()) {
 				return; // Hold jobs; don't mark failed
 			}
-
-			// Only place NEW orders during NSE window (or MCX window)
-			// Protection monitors (SL/TP) run as long as any market is open
+ 
 			if (isNseMarketOpen() || isMcxMarketOpen()) {
 				await zebu.executePendingBatch({ batchSize });
 			}

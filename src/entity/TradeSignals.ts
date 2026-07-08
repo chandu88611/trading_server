@@ -62,8 +62,20 @@ export class TradeSignal {
   @Column({ name: "strike", type: "numeric", precision: 15, scale: 4, nullable: true })
   strike!: number | null;
 
-  @Column({ name: "trading_symbol", type: "varchar", length: 60, nullable: true })
+  @Column({ name: "trading_symbol", type: "varchar", length: 120, nullable: true })
   tradingSymbol!: string | null;
+
+  @Column({ name: "source_action", type: "varchar", length: 10, nullable: true })
+  sourceAction!: string | null;
+
+  @Column({ name: "broker_instrument_id", type: "bigint", nullable: true })
+  brokerInstrumentId!: number | null;
+
+  @Column({ name: "instrument_token", type: "varchar", length: 80, nullable: true })
+  instrumentToken!: string | null;
+
+  @Column({ name: "tick_size", type: "numeric", precision: 18, scale: 8, nullable: true })
+  tickSize!: number | null;
 
   @Column({ name: "signal_time", type: "timestamptz" })
   signalTime!: Date;

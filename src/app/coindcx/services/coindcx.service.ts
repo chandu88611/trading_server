@@ -1,656 +1,757 @@
+import axios, { AxiosRequestConfig } from "axios";
 import crypto from "crypto";
-import { HttpStatusCode } from "../../../types/constants";
-import { TradingAccountStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
+import { CoinDCXDB } from "../db/coindcx.db";
 import {
 	CoinDCXAuthPayload,
 	CoinDCXBatchRequest,
 	CoinDCXCancelOrderRequest,
+	CoinDCXDeleteTokenResult,
 	CoinDCXModifyOrderRequest,
 	CoinDCXOrderPayload,
 	CoinDCXPlaceOrderRequest,
 	CoinDCXPublicOrderbookRequest,
 	CoinDCXPublicTickerRequest,
-} from "../interfaces/coindcx";
-import { TradeSignal } from "../../../entity/TradeSignals";
-import { CoinDCXDB } from "./coindcx.db";
+	CoinDCXTokenStatus,
+	CoinDCXVerifyTokenResult,
+} from "../types/coindcx";
 
-type CoinDCXConfig = {
-	baseUrl: string;
+type CoinDCXCredentials = {
 	apiKey: string;
 	apiSecret: string;
+	baseUrl: string;
+	connectedAt?: string | null;
+	verifiedAt?: string | null;
+};
+
+type NormalizedCoinDCXMeta = {
+	apiKey?: string;
+	apiSecret?: string;
+	baseUrl?: string;
+	connectedAt?: string | null;
+	verifiedAt?: string | null;
 };
 
 export class CoinDCXService {
-	private db = new CoinDCXDB();
-	private readonly knownQuotes = ["USDT", "USDC", "INR", "BTC", "ETH", "BNB", "EUR", "USD"] as const;
-	private readonly preferredQuotes = ["USDT", "INR", "USDC", "BTC", "ETH", "BNB", "EUR"] as const;
-	private readonly minLimitPrice = Number(process.env.COINDCX_MIN_LIMIT_PRICE ?? 0.00001);
-	private readonly maxLimitPrice = Number(process.env.COINDCX_MAX_LIMIT_PRICE ?? 10000000000);
-	private marketDiscoveryCache?: { expiresAt: number; markets: Set<string> };
+	private readonly db = new CoinDCXDB();
 
-	private asObject(value: unknown): Record<string, any> {
-		if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-		return { ...(value as Record<string, any>) };
-	}
+	private readonly defaultBaseUrl =
+		process.env.COINDCX_BASE_URL || "https://api.coindcx.com";
 
-	private pickFirstString(...values: unknown[]): string | undefined {
-		for (const value of values) {
-			if (value === undefined || value === null) continue;
-			const normalized = String(value).trim();
-			if (normalized) return normalized;
-		}
-		return undefined;
-	}
+	private readonly requestTimeout = Number(process.env.COINDCX_TIMEOUT_MS || 15000);
 
-	private normalizeCoinDCXMarket(symbol?: string): string {
-		let normalized = String(symbol ?? "").trim().toUpperCase();
-		if (!normalized) return normalized;
+	private readonly defaultBatchSize = Number(
+		process.env.COINDCX_EXECUTE_BATCH_SIZE || 25
+	);
 
-		if (normalized.includes(":")) {
-			normalized = normalized.split(":").pop() ?? normalized;
-		}
-
-		return normalized.replace(/[-_/:\s]/g, "");
-	}
-
-	private splitBaseAndQuote(symbol: string): { base: string; quote?: string } {
-		for (const quote of this.knownQuotes) {
-			if (symbol.endsWith(quote) && symbol.length > quote.length) {
-				return {
-					base: symbol.slice(0, -quote.length),
-					quote,
-				};
-			}
-		}
-		return { base: symbol };
-	}
-
-	private buildMarketCandidates(symbol?: string): string[] {
-		const base = this.normalizeCoinDCXMarket(symbol);
-		if (!base) return [];
-
-		const candidates = new Set<string>([base]);
-		const { base: root, quote } = this.splitBaseAndQuote(base);
-
-		if (!quote) {
-			for (const q of this.preferredQuotes) {
-				candidates.add(`${root}${q}`);
-			}
-		}
-
-		if (base.endsWith("USD") && !base.endsWith("USDT")) {
-			const onlyBase = base.slice(0, -3);
-			if (onlyBase) {
-				candidates.add(`${base}T`); // BTCUSD -> BTCUSDT
-				candidates.add(`${onlyBase}USDT`);
-			}
-		}
-
-		if (base.endsWith("USDC")) {
-			candidates.add(`${base.slice(0, -4)}USDT`);
-		}
-
-		return Array.from(candidates);
-	}
-
-	private isMarketDiscoveryEnabled(): boolean {
-		const isTestRun = process.argv.includes("--test") || process.execArgv.includes("--test");
-		if (isTestRun) return false;
-		return String(process.env.COINDCX_MARKET_DISCOVERY_ENABLED ?? "1") !== "0";
-	}
-
-	private toNormalizedCoinDCXMarketFromAny(value: unknown): string | null {
-		const normalized = this.normalizeCoinDCXMarket(String(value ?? ""));
-		if (!normalized) return null;
-		return normalized;
-	}
-
-	private addMarketCandidatesFromDetailsRow(target: Set<string>, row: any) {
-		const byPairParts = this.normalizeCoinDCXMarket(
-			`${String(row?.base_currency_short_name ?? "")}${String(row?.target_currency_short_name ?? "")}`
-		);
-		if (byPairParts) target.add(byPairParts);
-
-		const directFields = [row?.market, row?.symbol, row?.pair, row?.coindcx_name];
-		for (const field of directFields) {
-			const normalized = this.toNormalizedCoinDCXMarketFromAny(field);
-			if (normalized) target.add(normalized);
-		}
-	}
-
-	private async getKnownCoinDCXMarkets(): Promise<Set<string>> {
-		const now = Date.now();
-		if (this.marketDiscoveryCache && this.marketDiscoveryCache.expiresAt > now) {
-			return this.marketDiscoveryCache.markets;
-		}
-
-		try {
-			const path = this.pickFirstString(process.env.COINDCX_PUBLIC_MARKETS_PATH, "exchange/v1/markets_details")!;
-			const data = await this.coindcxPublicRequest(path);
-			if (!Array.isArray(data)) return new Set<string>();
-
-			const markets = new Set<string>();
-			for (const row of data) {
-				this.addMarketCandidatesFromDetailsRow(markets, row);
-			}
-
-			const ttlMs = Number(process.env.COINDCX_MARKET_DISCOVERY_TTL_MS ?? 5 * 60 * 1000);
-			this.marketDiscoveryCache = {
-				expiresAt: now + (Number.isFinite(ttlMs) && ttlMs > 0 ? ttlMs : 5 * 60 * 1000),
-				markets,
-			};
-
-			return markets;
-		} catch {
-			return new Set<string>();
-		}
-	}
-
-	private async filterValidMarketCandidates(candidates: string[]): Promise<string[]> {
-		if (!this.isMarketDiscoveryEnabled()) return candidates;
-		const knownMarkets = await this.getKnownCoinDCXMarkets();
-		if (!knownMarkets.size) return candidates;
-
-		const filtered = candidates.filter((c) => knownMarkets.has(c));
-		return filtered;
-	}
-
-	private isCoinDCXInvalidPairError(err: any): boolean {
-		const status = Number(err?.data?.status ?? 0);
-		const message = String(err?.data?.payload?.message ?? "").toLowerCase();
-		return status === 422 && (message.includes("currency pair") || message.includes("pair is not valid"));
-	}
-
-	private isCoinDCXInvalidPriceError(err: any): boolean {
-		const status = Number(err?.data?.status ?? 0);
-		const message = String(err?.data?.payload?.message ?? "").toLowerCase();
-		return status === 400 && message.includes("price should be within range");
-	}
-
-	private extractCoinDCXPrecisionFromError(err: any): number | null {
-		const status = Number(err?.data?.status ?? 0);
-		const message = String(err?.data?.payload?.message ?? "");
-		if (status !== 400) return null;
-
-		const m = message.match(/precision\s+should\s+be\s+(\d+)/i);
-		if (!m) return null;
-
-		const precision = Number(m[1]);
-		if (!Number.isInteger(precision) || precision < 0 || precision > 18) return null;
-		return precision;
-	}
-
-	private toFixedPrecisionString(value: unknown, precision: number): string | null {
-		const num = Number(value);
-		if (!Number.isFinite(num)) return null;
-		return num.toFixed(precision);
-	}
-
-	private isPriceWithinCoinDCXRange(price: number): boolean {
-		if (!Number.isFinite(price) || price <= 0) return false;
-		return price >= this.minLimitPrice && price <= this.maxLimitPrice;
-	}
-
-	private normalizeCoinDCXPair(symbol?: string): string {
-		return String(symbol ?? "")
-			.trim()
-			.toUpperCase()
-			.replace(/[\-/:\s]/g, "_");
-	}
-
-	private getCoinDCXPublicBaseUrl(): string {
-		const baseUrl = String(
-			this.pickFirstString(process.env.COINDCX_PUBLIC_BASE_URL, process.env.COINDCX_BASE_URL, "https://api.coindcx.com") ?? ""
-		).trim();
-
-		if (!baseUrl) {
-			throw {
-				statusCode: HttpStatusCode._BAD_REQUEST,
-				message: "coindcx_base_url_missing",
-			};
-		}
-
-		return baseUrl;
-	}
-
-	private async coindcxPublicRequest(path: string, query?: Record<string, string | undefined>) {
-		const baseUrl = this.getCoinDCXPublicBaseUrl();
-		const url = new URL(`${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`);
-
-		Object.entries(query ?? {}).forEach(([k, v]) => {
-			if (v && String(v).trim()) url.searchParams.set(k, String(v).trim());
-		});
-
-		const res = await fetch(url.toString(), {
-			method: "GET",
-			headers: {
-				accept: "application/json",
-			},
-		});
-
-		const ct = res.headers.get("content-type") ?? "";
-		let responsePayload: any = null;
-		try {
-			responsePayload = ct.includes("application/json") ? await res.json() : await res.text();
-		} catch {
-			responsePayload = null;
-		}
-
-		if (!res.ok) {
-			throw {
-				statusCode: HttpStatusCode._BAD_GATEWAY,
-				message: "coindcx_public_upstream_failed",
-				data: { status: res.status, payload: responsePayload },
-			};
-		}
-
-		return responsePayload;
-	}
-
-	private getCoinDCXConfigFromAccount(account: any): CoinDCXConfig {
-		const meta = this.asObject(account?.accountMeta);
-		const coindcx = this.asObject(meta?.coindcx);
-
-		const baseUrl = String(
-			this.pickFirstString(coindcx.baseUrl, process.env.COINDCX_BASE_URL, "https://api.coindcx.com") ?? ""
-		).trim();
-		const apiKey = String(this.pickFirstString(coindcx.apiKey) ?? "").trim();
-		const apiSecret = String(this.pickFirstString(coindcx.apiSecret) ?? "").trim();
-
-		if (!baseUrl) {
-			throw {
-				statusCode: HttpStatusCode._BAD_REQUEST,
-				message: "coindcx_base_url_missing",
-			};
-		}
-
-		if (!apiKey || !apiSecret) {
-			throw {
-				statusCode: HttpStatusCode._BAD_REQUEST,
-				message: "coindcx_credentials_missing",
-			};
-		}
-
-		return { baseUrl, apiKey, apiSecret };
-	}
-
-	private async coindcxPrivateRequest(config: CoinDCXConfig, path: string, body: Record<string, any> = {}) {
-		const url = `${config.baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-		const payload = {
-			timestamp: Number(body.timestamp ?? Date.now()),
-			...body,
-		};
-		const payloadJson = JSON.stringify(payload);
-		const signature = crypto.createHmac("sha256", config.apiSecret).update(payloadJson).digest("hex");
-
-		const res = await fetch(url, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				accept: "application/json",
-				"X-AUTH-APIKEY": config.apiKey,
-				"X-AUTH-SIGNATURE": signature,
-			},
-			body: payloadJson,
-		});
-
-		const ct = res.headers.get("content-type") ?? "";
-		let responsePayload: any = null;
-		try {
-			responsePayload = ct.includes("application/json") ? await res.json() : await res.text();
-		} catch {
-			responsePayload = null;
-		}
-        console.log("[CoinDCX] API RESPONSE", {
-            url,
-            requestPayload: payload,
-            responseStatus: res.status,
-            responsePayload,
-            res
-        });
-		if (!res.ok) {
-			throw {
-				statusCode: HttpStatusCode._BAD_GATEWAY,
-				message: "coindcx_upstream_failed",
-				data: { status: res.status, payload: responsePayload },
-			};
-		}
-
-		return responsePayload;
-	}
+	private readonly maxBatchSize = Number(
+		process.env.COINDCX_EXECUTE_MAX_BATCH_SIZE || 100
+	);
 
 	async saveAuthToken(payload: CoinDCXAuthPayload) {
-		const account = await this.db.getTradingAccountById(payload.userId, payload.tradingAccountId);
+		const account = await this.db.getTradingAccountById(
+			payload.userId,
+			payload.tradingAccountId
+		);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const existingMeta = this.asObject(account.accountMeta);
-		const existingCoinDCX = this.asObject(existingMeta.coindcx);
+		const baseUrl = this.cleanBaseUrl(payload.baseUrl || this.defaultBaseUrl);
+		const now = new Date().toISOString();
 
-		const nextMeta = {
+		await this.db.updateAccountMeta(account!, {
 			coindcx: {
-				...existingCoinDCX,
 				apiKey: payload.apiKey,
 				apiSecret: payload.apiSecret,
-				baseUrl: payload.baseUrl ?? existingCoinDCX.baseUrl,
-				updatedAt: new Date().toISOString(),
+				baseUrl,
+				connectedAt: now,
+				verifiedAt: null,
 			},
-		};
+		});
 
-		if (account.status !== TradingAccountStatus.VERIFIED) {
-			account.status = TradingAccountStatus.VERIFIED;
-		}
-
-		await this.db.updateAccountMeta(account, nextMeta);
-
-		return { ok: true };
-	}
-
-	private buildOrderFromSignal(signal: TradeSignal): CoinDCXOrderPayload {
 		return {
-			symbol: this.normalizeCoinDCXMarket(String(signal.symbol)),
-			side: String(signal.action).toUpperCase() === "SELL" ? "SELL" : "BUY",
-			quantity: Number(signal.volume) || 1,
-			orderType: signal.price != null ? "LIMIT" : "MARKET",
-			price: signal.price != null ? Number(signal.price) : undefined,
-			clientOrderId: `signal_${signal.id}`,
+			tradingAccountId: payload.tradingAccountId,
+			broker: this.getBrokerName(account),
+			baseUrl,
+			connectedAt: now,
+			hasApiKey: true,
+			hasApiSecret: true,
 		};
 	}
 
-	async placeOrder(req: CoinDCXPlaceOrderRequest) {
-		const account = await this.db.getTradingAccountById(req.userId, req.tradingAccountId);
+	async getAuthTokenStatus(
+		userId: number,
+		tradingAccountId: number
+	): Promise<CoinDCXTokenStatus> {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const cfg = this.getCoinDCXConfigFromAccount(account);
-		const candidateMarkets = this.buildMarketCandidates(req.order.symbol);
-		if (!candidateMarkets.length) {
-			throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "coindcx_symbol_required" };
-		}
+		const meta = this.getCoinDCXMeta(account!);
 
-		const marketCandidates = await this.filterValidMarketCandidates(candidateMarkets);
-		if (!marketCandidates.length) {
-			throw {
-				statusCode: HttpStatusCode._BAD_REQUEST,
-				message: "coindcx_no_valid_market_found",
-				data: {
-					symbol: req.order.symbol,
-					triedMarkets: candidateMarkets,
-				},
-			};
-		}
+		const hasApiKey = Boolean(meta.apiKey);
+		const hasApiSecret = Boolean(meta.apiSecret);
 
-		const requestedOrderType = String(req.order.orderType ?? "LIMIT").toUpperCase();
-		const requestedPrice = Number(req.order.price ?? 0);
-		const canUseLimit =
-			requestedOrderType !== "MARKET" && this.isPriceWithinCoinDCXRange(requestedPrice);
-
-		if (requestedOrderType !== "MARKET" && !canUseLimit) {
-			console.warn("[COINDCX] Limit price invalid/out-of-range; falling back to market order", {
-				symbol: req.order.symbol,
-				price: req.order.price,
-				minLimitPrice: this.minLimitPrice,
-				maxLimitPrice: this.maxLimitPrice,
-			});
-		}
-
-		const basePayload: Record<string, any> = {
-			side: String(req.order.side ?? "BUY").toLowerCase().startsWith("s") ? "sell" : "buy",
-			order_type: canUseLimit ? "limit_order" : "market_order",
-			total_quantity: String(Number(req.order.quantity ?? 0)),
-			client_order_id: req.order.clientOrderId,
+		return {
+			tradingAccountId,
+			broker: this.getBrokerName(account),
+			hasApiKey,
+			hasApiSecret,
+			baseUrl: meta.baseUrl || this.defaultBaseUrl,
+			connectedAt: meta.connectedAt || null,
+			verifiedAt: meta.verifiedAt || null,
+			isReady: hasApiKey && hasApiSecret,
 		};
+	}
 
-		if (basePayload.order_type === "limit_order") {
-			basePayload.price_per_unit = String(requestedPrice);
-		}
+	async verifyAuthToken(
+		userId: number,
+		tradingAccountId: number
+	): Promise<CoinDCXVerifyTokenResult> {
+		const checkedAt = new Date().toISOString();
 
-		const path = this.pickFirstString(process.env.COINDCX_ORDER_CREATE_PATH, "exchange/v1/orders/create")!;
+		try {
+			const account = await this.db.getTradingAccountById(
+				userId,
+				tradingAccountId
+			);
 
-		let lastError: any = null;
-		for (let i = 0; i < marketCandidates.length; i++) {
-			const payload: Record<string, any> = {
-				...basePayload,
-				market: marketCandidates[i],
-			};
-			Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
-
-			try {
-				const data = await this.coindcxPrivateRequest(cfg, path, payload);
-				const first = Array.isArray(data) ? data[0] : data;
-				const orderId = first?.id || first?.order_id || first?.orderId || null;
-				return { orderId: orderId ? String(orderId) : null, raw: data };
-			} catch (err: any) {
-				if (payload.order_type === "limit_order") {
-					const requiredPrecision = this.extractCoinDCXPrecisionFromError(err);
-					if (requiredPrecision !== null) {
-						const normalizedPrice = this.toFixedPrecisionString(payload.price_per_unit, requiredPrecision);
-						if (normalizedPrice && normalizedPrice !== String(payload.price_per_unit)) {
-							const precisionRetryPayload: Record<string, any> = {
-								...payload,
-								price_per_unit: normalizedPrice,
-							};
-
-							console.warn("[COINDCX] Limit order rejected for precision; retrying with normalized price", {
-								originalSymbol: req.order.symbol,
-								market: payload.market,
-								originalPrice: payload.price_per_unit,
-								normalizedPrice,
-								requiredPrecision,
-							});
-
-							try {
-								const data = await this.coindcxPrivateRequest(cfg, path, precisionRetryPayload);
-								const first = Array.isArray(data) ? data[0] : data;
-								const orderId = first?.id || first?.order_id || first?.orderId || null;
-								return { orderId: orderId ? String(orderId) : null, raw: data };
-							} catch (precisionErr: any) {
-								lastError = precisionErr;
-								err = precisionErr;
-							}
-						}
-					}
-				}
-
-				if (payload.order_type === "limit_order" && this.isCoinDCXInvalidPriceError(err)) {
-					const marketFallbackPayload: Record<string, any> = {
-						...payload,
-						order_type: "market_order",
-					};
-					delete marketFallbackPayload.price_per_unit;
-
-					console.warn("[COINDCX] Limit order rejected for price range; retrying as market order", {
-						originalSymbol: req.order.symbol,
-						market: payload.market,
-						price: payload.price_per_unit,
-					});
-
-					try {
-						const data = await this.coindcxPrivateRequest(cfg, path, marketFallbackPayload);
-						const first = Array.isArray(data) ? data[0] : data;
-						const orderId = first?.id || first?.order_id || first?.orderId || null;
-						return { orderId: orderId ? String(orderId) : null, raw: data };
-					} catch (fallbackErr: any) {
-						lastError = fallbackErr;
-					}
-				}
-
-				lastError = err;
-				const canRetry = i < marketCandidates.length - 1 && this.isCoinDCXInvalidPairError(err);
-				if (canRetry) {
-					console.warn("[COINDCX] Invalid market, retrying with alternate candidate", {
-						originalSymbol: req.order.symbol,
-						attemptedMarket: marketCandidates[i],
-						nextMarket: marketCandidates[i + 1],
-					});
-					continue;
-				}
-
-				if (this.isCoinDCXInvalidPairError(err)) {
-					continue;
-				}
-
-				throw err;
+			if (!account) {
+				this.throwError(404, "trading_account_not_found");
 			}
-		}
 
-		if (lastError && this.isCoinDCXInvalidPairError(lastError)) {
-			throw {
-				statusCode: HttpStatusCode._BAD_REQUEST,
-				message: "coindcx_no_valid_market_found",
-				data: {
-					symbol: req.order.symbol,
-					triedMarkets: marketCandidates,
-					upstream: lastError?.data,
+			const credentials = this.requireCredentials(account!);
+
+			await this.privatePost(credentials, "/exchange/v1/users/balances", {
+				timestamp: Date.now(),
+			});
+
+			await this.db.updateAccountMeta(account!, {
+				coindcx: {
+					...this.getCoinDCXMeta(account!),
+					verifiedAt: checkedAt,
 				},
+			});
+
+			return {
+				valid: true,
+				tradingAccountId,
+				broker: this.getBrokerName(account),
+				checkedAt,
+			};
+		} catch (error: any) {
+			return {
+				valid: false,
+				tradingAccountId,
+				broker: null,
+				checkedAt,
+				error: this.getErrorMessage(error),
 			};
 		}
-
-		throw lastError ?? { statusCode: HttpStatusCode._BAD_GATEWAY, message: "coindcx_upstream_failed" };
 	}
 
-	async modifyOrder(req: CoinDCXModifyOrderRequest) {
-		const account = await this.db.getTradingAccountById(req.userId, req.tradingAccountId);
+	async deleteAuthToken(
+		userId: number,
+		tradingAccountId: number
+	): Promise<CoinDCXDeleteTokenResult> {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const cfg = this.getCoinDCXConfigFromAccount(account);
-		const path = this.pickFirstString(process.env.COINDCX_ORDER_MODIFY_PATH, "exchange/v1/orders/edit")!;
-		const payload: Record<string, any> = {
-			id: req.orderId,
+		await this.db.clearAuthMeta(account!);
+
+		return {
+			deleted: true,
+			tradingAccountId,
+			broker: this.getBrokerName(account),
 		};
-		if (typeof req.quantity === "number") payload.total_quantity = String(req.quantity);
-		if (typeof req.price === "number") payload.price_per_unit = String(req.price);
-
-		const data = await this.coindcxPrivateRequest(cfg, path, payload);
-		return { orderId: req.orderId, raw: data };
 	}
 
-	async cancelOrder(req: CoinDCXCancelOrderRequest) {
-		const account = await this.db.getTradingAccountById(req.userId, req.tradingAccountId);
+	async placeOrder(request: CoinDCXPlaceOrderRequest) {
+		const account = await this.db.getTradingAccountById(
+			request.userId,
+			request.tradingAccountId
+		);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const cfg = this.getCoinDCXConfigFromAccount(account);
-		const path = this.pickFirstString(process.env.COINDCX_ORDER_CANCEL_PATH, "exchange/v1/orders/cancel")!;
-		const data = await this.coindcxPrivateRequest(cfg, path, { id: req.orderId });
-		return { orderId: req.orderId, raw: data };
+		const credentials = this.requireCredentials(account!);
+		const order = this.normalizeOrder(request.order);
+
+		const body: Record<string, any> = {
+			side: order.side.toLowerCase(),
+			order_type: this.normalizeOrderType(order.orderType),
+			market: this.normalizeMarket(order.symbol),
+			total_quantity: String(order.quantity),
+			timestamp: Date.now(),
+		};
+
+		if (order.price !== undefined && order.price !== null) {
+			body.price_per_unit = String(order.price);
+		}
+
+		if (order.clientOrderId) {
+			body.client_order_id = order.clientOrderId;
+		}
+
+		const result = await this.privatePost(
+			credentials,
+			"/exchange/v1/orders/create",
+			body
+		);
+
+		return result;
+	}
+
+	async modifyOrder(request: CoinDCXModifyOrderRequest) {
+		const account = await this.db.getTradingAccountById(
+			request.userId,
+			request.tradingAccountId
+		);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		const body: Record<string, any> = {
+			id: request.orderId,
+			timestamp: Date.now(),
+		};
+
+		if (request.quantity !== undefined && request.quantity !== null) {
+			const quantity = Number(request.quantity);
+
+			if (!Number.isFinite(quantity) || quantity <= 0) {
+				this.throwError(400, "invalid_quantity");
+			}
+
+			body.total_quantity = String(quantity);
+		}
+
+		if (request.price !== undefined && request.price !== null) {
+			const price = Number(request.price);
+
+			if (!Number.isFinite(price) || price <= 0) {
+				this.throwError(400, "invalid_price");
+			}
+
+			body.price_per_unit = String(price);
+		}
+
+		if (!body.total_quantity && !body.price_per_unit) {
+			this.throwError(400, "quantity_or_price_required");
+		}
+
+		return this.privatePost(credentials, "/exchange/v1/orders/edit", body);
+	}
+
+	async cancelOrder(request: CoinDCXCancelOrderRequest) {
+		const account = await this.db.getTradingAccountById(
+			request.userId,
+			request.tradingAccountId
+		);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		return this.privatePost(credentials, "/exchange/v1/orders/cancel", {
+			id: request.orderId,
+			timestamp: Date.now(),
+		});
 	}
 
 	async getOrders(userId: number, tradingAccountId: number) {
 		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const cfg = this.getCoinDCXConfigFromAccount(account);
-		const path = this.pickFirstString(process.env.COINDCX_ACTIVE_ORDERS_PATH, "exchange/v1/orders/active_orders")!;
-		return this.coindcxPrivateRequest(cfg, path, {});
+		const credentials = this.requireCredentials(account!);
+
+		const activeOrders = await this.privatePost(
+			credentials,
+			"/exchange/v1/orders/active_orders",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		return {
+			activeOrders,
+		};
 	}
 
 	async getPositions(userId: number, tradingAccountId: number) {
 		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const cfg = this.getCoinDCXConfigFromAccount(account);
-		const path = this.pickFirstString(process.env.COINDCX_BALANCES_PATH, "exchange/v1/users/balances")!;
-		return this.coindcxPrivateRequest(cfg, path, {});
+		const credentials = this.requireCredentials(account!);
+
+		const balances = await this.privatePost(
+			credentials,
+			"/exchange/v1/users/balances",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		return {
+			message: "CoinDCX spot account does not have futures-style positions",
+			balances: this.filterNonZeroBalances(balances),
+		};
 	}
 
 	async getHoldings(userId: number, tradingAccountId: number) {
 		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
 		if (!account) {
-			throw { statusCode: HttpStatusCode._NOT_FOUND, message: "trading_account_not_found" };
+			this.throwError(404, "trading_account_not_found");
 		}
 
-		const cfg = this.getCoinDCXConfigFromAccount(account);
-		const path = this.pickFirstString(process.env.COINDCX_BALANCES_PATH, "exchange/v1/users/balances")!;
-		return this.coindcxPrivateRequest(cfg, path, {});
+		const credentials = this.requireCredentials(account!);
+
+		const balances = await this.privatePost(
+			credentials,
+			"/exchange/v1/users/balances",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		return this.filterNonZeroBalances(balances);
 	}
 
-	async getPublicTicker(req?: CoinDCXPublicTickerRequest) {
-		const path = this.pickFirstString(process.env.COINDCX_PUBLIC_TICKER_PATH, "exchange/ticker")!;
-		const data = await this.coindcxPublicRequest(path);
+	async executePendingBatch(request: CoinDCXBatchRequest) {
+		const batchSize = this.normalizeBatchSize(request.batchSize);
+		const jobs = await this.db.claimPendingTrades(batchSize);
 
-		const market = this.normalizeCoinDCXMarket(req?.market);
-		if (!market || !Array.isArray(data)) return data;
+		const result = {
+			picked: jobs.length,
+			completed: 0,
+			failed: 0,
+			items: [] as any[],
+		};
 
-		const matched = data.filter((row: any) => {
-			const candidateA = this.normalizeCoinDCXMarket(row?.market);
-			const candidateB = this.normalizeCoinDCXMarket(row?.symbol);
-			return candidateA === market || candidateB === market;
-		});
-
-		return matched;
-	}
-
-	async getPublicOrderbook(req: CoinDCXPublicOrderbookRequest) {
-		const market = String(req?.market ?? "").trim();
-		if (!market) {
-			throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "market_required" };
-		}
-
-		const path = this.pickFirstString(process.env.COINDCX_PUBLIC_ORDERBOOK_PATH, "market_data/orderbook")!;
-		const pair = this.normalizeCoinDCXPair(market);
-		return this.coindcxPublicRequest(path, {
-			pair,
-			market: this.normalizeCoinDCXMarket(market),
-		});
-	}
-
-	async executePendingBatch(opts?: CoinDCXBatchRequest) {
-		const batchSize = opts?.batchSize ?? Number(process.env.COINDCX_EXEC_BATCH_SIZE ?? 25);
-		const trades = await this.db.claimPendingTrades(batchSize);
-		if (!trades.length) return { ok: true, processed: 0 };
-
-		const updates: { id: number; status: string; error?: string }[] = [];
-
-		for (const t of trades) {
+		for (const job of jobs as any[]) {
 			try {
-				if (!t.tradingAccount) {
-					updates.push({ id: t.id, status: "failed", error: "missing_trading_account" });
-					continue;
+				const tradingAccount = job.tradingAccount;
+
+				if (!tradingAccount?.userId || !tradingAccount?.id) {
+					this.throwError(400, "trade_signal_missing_trading_account");
 				}
 
-				const order = this.buildOrderFromSignal(t);
-				await this.placeOrder({
-					userId: Number(t.userId),
-					tradingAccountId: Number((t.tradingAccount as any).id),
+				const order = this.buildOrderFromTradeSignal(job);
+
+				const orderResult: any = await this.placeOrder({
+					userId: Number(tradingAccount.userId),
+					tradingAccountId: Number(tradingAccount.id),
 					order,
 				});
 
-				console.info("[COINDCX] EXEC OK", {
-					tradeSignalId: t.id,
-					symbol: order.symbol,
-					quantity: order.quantity,
+				const brokerOrderId = this.extractBrokerOrderId(orderResult);
+
+				await this.db.markJobSuccess(job, brokerOrderId);
+
+				result.completed += 1;
+				result.items.push({
+					id: job.id,
+					status: "completed",
+					brokerOrderId,
+					response: orderResult,
 				});
-				updates.push({ id: t.id, status: "executed" });
-			} catch (e: any) {
-				console.error("[COINDCX] EXEC FAILED", {
-					tradeSignalId: t.id,
-					error: e?.message ?? String(e),
-					payload: e?.data,
-                    error2: e
+			} catch (error: any) {
+				const message = this.getErrorMessage(error);
+
+				await this.db.markJobFailed(job as any, message);
+
+				result.failed += 1;
+				result.items.push({
+					id: (job as any)?.id,
+					status: "failed",
+					error: message,
 				});
-				updates.push({ id: t.id, status: "failed", error: e?.message ?? String(e) });
 			}
 		}
 
-		await this.db.updateTradeStatus(updates);
-		const executed = updates.filter((u) => u.status === "executed").length;
-		const failed = updates.filter((u) => u.status === "failed").length;
-		console.info("[COINDCX] EXEC BATCH SUMMARY", {
-			processed: trades.length,
-			executed,
-			failed,
-		});
+		return result;
+	}
 
-		return { ok: true, processed: trades.length };
+	async getPublicTicker(request: CoinDCXPublicTickerRequest) {
+		const data = await this.publicGet("/exchange/ticker");
+
+		const market = request.market
+			? this.normalizeMarket(request.market).toUpperCase()
+			: undefined;
+
+		if (!market) {
+			return data;
+		}
+
+		if (Array.isArray(data)) {
+			return data.filter((item: any) => {
+				const itemMarket = String(
+					item?.market ?? item?.symbol ?? item?.pair ?? ""
+				).toUpperCase();
+
+				return itemMarket === market;
+			});
+		}
+
+		return data;
+	}
+
+	async getPublicOrderbook(request: CoinDCXPublicOrderbookRequest) {
+		const market = this.normalizeMarket(request.market);
+
+		return this.publicGet("/exchange/orderbook", {
+			market,
+		});
+	}
+
+	private async publicGet(path: string, query?: Record<string, any>) {
+		const config: AxiosRequestConfig = {
+			method: "GET",
+			url: `${this.defaultBaseUrl}${path}`,
+			params: query,
+			timeout: this.requestTimeout,
+		};
+
+		const response = await axios(config);
+		return response.data;
+	}
+
+	private async privatePost(
+		credentials: CoinDCXCredentials,
+		path: string,
+		body: Record<string, any>
+	) {
+		const finalBody = {
+			...body,
+			timestamp: body.timestamp || Date.now(),
+		};
+
+		const jsonBody = JSON.stringify(finalBody);
+
+		const signature = crypto
+			.createHmac("sha256", credentials.apiSecret)
+			.update(jsonBody)
+			.digest("hex");
+
+		const config: AxiosRequestConfig = {
+			method: "POST",
+			url: `${credentials.baseUrl}${path}`,
+			timeout: this.requestTimeout,
+			headers: {
+				"Content-Type": "application/json",
+				"X-AUTH-APIKEY": credentials.apiKey,
+				"X-AUTH-SIGNATURE": signature,
+			},
+			data: finalBody,
+		};
+
+		try {
+			const response = await axios(config);
+			return response.data;
+		} catch (error: any) {
+			const statusCode = error?.response?.status || 500;
+			const brokerError =
+				error?.response?.data?.message ||
+				error?.response?.data?.error ||
+				error?.response?.data ||
+				error?.message ||
+				"coindcx_request_failed";
+
+			this.throwError(
+				statusCode,
+				typeof brokerError === "string"
+					? brokerError
+					: JSON.stringify(brokerError)
+			);
+		}
+	}
+
+	private requireCredentials(account: any): CoinDCXCredentials {
+		const meta = this.getCoinDCXMeta(account);
+
+		if (!meta.apiKey || !meta.apiSecret) {
+			this.throwError(400, "coindcx_credentials_not_configured");
+		}
+
+		return {
+			apiKey: String(meta.apiKey),
+			apiSecret: String(meta.apiSecret),
+			baseUrl: this.cleanBaseUrl(meta.baseUrl || this.defaultBaseUrl),
+			connectedAt: meta.connectedAt || null,
+			verifiedAt: meta.verifiedAt || null,
+		};
+	}
+
+	private getCoinDCXMeta(account: any): NormalizedCoinDCXMeta {
+		const accountMeta = account?.accountMeta ?? {};
+
+		const coindcx =
+			accountMeta.coindcx ??
+			accountMeta.coinDCX ??
+			accountMeta.coinDcx ??
+			{};
+
+		return {
+			apiKey:
+				coindcx.apiKey ??
+				accountMeta.coindcxApiKey ??
+				accountMeta.apiKey ??
+				undefined,
+			apiSecret:
+				coindcx.apiSecret ??
+				accountMeta.coindcxApiSecret ??
+				accountMeta.apiSecret ??
+				undefined,
+			baseUrl:
+				coindcx.baseUrl ??
+				accountMeta.coindcxBaseUrl ??
+				accountMeta.baseUrl ??
+				this.defaultBaseUrl,
+			connectedAt: coindcx.connectedAt ?? null,
+			verifiedAt: coindcx.verifiedAt ?? null,
+		};
+	}
+
+	private normalizeOrder(order: CoinDCXOrderPayload): CoinDCXOrderPayload {
+		if (!order) {
+			this.throwError(400, "order_required");
+		}
+
+		const symbol = String(order.symbol ?? "").trim();
+		const side = String(order.side ?? "").trim().toUpperCase();
+		const quantity = Number(order.quantity);
+
+		if (!symbol) {
+			this.throwError(400, "symbol_required");
+		}
+
+		if (!["BUY", "SELL"].includes(side)) {
+			this.throwError(400, "invalid_order_side");
+		}
+
+		if (!Number.isFinite(quantity) || quantity <= 0) {
+			this.throwError(400, "invalid_quantity");
+		}
+
+		if (order.price !== undefined && order.price !== null) {
+			const price = Number(order.price);
+
+			if (!Number.isFinite(price) || price <= 0) {
+				this.throwError(400, "invalid_price");
+			}
+		}
+
+		return {
+			...order,
+			symbol,
+			side: side as "BUY" | "SELL",
+			quantity,
+			price:
+				order.price !== undefined && order.price !== null
+					? Number(order.price)
+					: undefined,
+			orderType: order.orderType || "market_order",
+		};
+	}
+
+	private normalizeOrderType(orderType?: string) {
+		const value = String(orderType || "market_order")
+			.trim()
+			.toLowerCase();
+
+		if (
+			value === "market" ||
+			value === "market_order" ||
+			value === "marketorder"
+		) {
+			return "market_order";
+		}
+
+		if (value === "limit" || value === "limit_order" || value === "limitorder") {
+			return "limit_order";
+		}
+
+		return value;
+	}
+
+	private normalizeMarket(symbol: string) {
+		const value = String(symbol || "")
+			.trim()
+			.toUpperCase()
+			.replace("/", "")
+			.replace("-", "")
+			.replace("_", "");
+
+		if (!value) {
+			this.throwError(400, "market_required");
+		}
+
+		return value;
+	}
+
+	private normalizeBatchSize(batchSize?: number) {
+		const value = Number(batchSize);
+
+		if (!Number.isFinite(value) || value <= 0) {
+			return this.defaultBatchSize;
+		}
+
+		return Math.min(Math.floor(value), this.maxBatchSize);
+	}
+
+	private buildOrderFromTradeSignal(job: any): CoinDCXOrderPayload {
+		const payload =
+			job?.payload ??
+			job?.signalPayload ??
+			job?.order ??
+			job?.metadata ??
+			job?.meta ??
+			{};
+
+		const symbol =
+			job?.symbol ??
+			payload?.symbol ??
+			payload?.market ??
+			payload?.pair ??
+			payload?.ticker;
+
+		const rawSide =
+			job?.side ??
+			payload?.side ??
+			payload?.action ??
+			payload?.signal ??
+			payload?.transactionType;
+
+		const quantity =
+			job?.quantity ??
+			payload?.quantity ??
+			payload?.qty ??
+			payload?.total_quantity ??
+			payload?.totalQuantity;
+
+		const price =
+			job?.price ??
+			payload?.price ??
+			payload?.price_per_unit ??
+			payload?.pricePerUnit;
+
+		const orderType =
+			job?.orderType ??
+			payload?.orderType ??
+			payload?.order_type ??
+			payload?.type ??
+			"market_order";
+
+		const side = this.normalizeSignalSide(rawSide);
+
+		return this.normalizeOrder({
+			symbol,
+			side,
+			quantity: Number(quantity),
+			price:
+				price !== undefined && price !== null && price !== ""
+					? Number(price)
+					: undefined,
+			orderType,
+			clientOrderId: job?.id ? `trade_signal_${job.id}` : undefined,
+		});
+	}
+
+	private normalizeSignalSide(side: any): "BUY" | "SELL" {
+		const value = String(side || "")
+			.trim()
+			.toUpperCase();
+
+		if (["BUY", "LONG", "ENTRY", "B"].includes(value)) {
+			return "BUY";
+		}
+
+		if (["SELL", "SHORT", "EXIT", "S"].includes(value)) {
+			return "SELL";
+		}
+
+		this.throwError(400, "invalid_signal_side");
+	}
+
+	private extractBrokerOrderId(response: any): string | null {
+		return (
+			response?.id ??
+			response?.order_id ??
+			response?.client_order_id ??
+			response?.orders?.[0]?.id ??
+			response?.data?.id ??
+			response?.data?.order_id ??
+			null
+		);
+	}
+
+	private filterNonZeroBalances(data: any) {
+		if (!Array.isArray(data)) {
+			return data;
+		}
+
+		return data.filter((item: any) => {
+			const balance = Number(
+				item?.balance ??
+					item?.available_balance ??
+					item?.locked_balance ??
+					item?.quantity ??
+					0
+			);
+
+			const available = Number(item?.available_balance ?? 0);
+			const locked = Number(item?.locked_balance ?? 0);
+
+			return balance > 0 || available > 0 || locked > 0;
+		});
+	}
+
+	private cleanBaseUrl(baseUrl: string) {
+		return String(baseUrl || this.defaultBaseUrl).replace(/\/+$/, "");
+	}
+
+	private getBrokerName(account: any) {
+		return account?.broker?.code || account?.broker?.name || null;
+	}
+
+	private getErrorMessage(error: any) {
+		if (!error) return "unknown_error";
+
+		return (
+			error?.message ||
+			error?.response?.data?.message ||
+			error?.response?.data?.error ||
+			(typeof error?.response?.data === "string"
+				? error.response.data
+				: undefined) ||
+			"unknown_error"
+		);
+	}
+
+	private throwError(statusCode: number, message: string): never {
+		throw {
+			statusCode,
+			message,
+		};
 	}
 }

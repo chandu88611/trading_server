@@ -7,18 +7,31 @@ export class CoinDCXController {
 	private service = new CoinDCXService();
 
 	private requireUserId(req: Request): number {
-		const userId = Number((req as any)?.auth?.userId ?? (req.body as any)?.userId ?? (req.query as any)?.userId);
+		const userId = Number((req as any)?.auth?.userId);
+
 		if (!Number.isFinite(userId) || userId <= 0) {
-			throw { statusCode: HttpStatusCode._UNAUTHORISED, message: "userId_required" };
+			throw {
+				statusCode: HttpStatusCode._UNAUTHORISED,
+				message: "userId_required",
+			};
 		}
+
 		return userId;
 	}
 
 	private requireTradingAccountId(req: Request): number {
-		const id = Number((req.body as any)?.tradingAccountId ?? (req.query as any)?.tradingAccountId);
+		const id = Number(
+			(req.body as any)?.tradingAccountId ??
+			(req.query as any)?.tradingAccountId
+		);
+
 		if (!Number.isFinite(id) || id <= 0) {
-			throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "tradingAccountId_required" };
+			throw {
+				statusCode: HttpStatusCode._BAD_REQUEST,
+				message: "tradingAccountId_required",
+			};
 		}
+
 		return id;
 	}
 
@@ -32,7 +45,9 @@ export class CoinDCXController {
 		const baseUrl = String((req.body as any)?.baseUrl ?? "").trim() || undefined;
 
 		if (!apiKey || !apiSecret) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "apiKey_apiSecret_required" });
+			return res.status(HttpStatusCode._BAD_REQUEST).json({
+				message: "apiKey_apiSecret_required",
+			});
 		}
 
 		const result = await this.service.saveAuthToken({
@@ -43,7 +58,49 @@ export class CoinDCXController {
 			baseUrl,
 		});
 
-		return res.json({ message: "coindcx_credentials_saved", data: result });
+		return res.status(200).json({
+			message: "coindcx_credentials_saved",
+			data: result,
+		});
+	}
+
+	@ControllerError()
+	async getTokenStatus(req: Request, res: Response) {
+		const userId = this.requireUserId(req);
+		const tradingAccountId = this.requireTradingAccountId(req);
+
+		const data = await this.service.getAuthTokenStatus(userId, tradingAccountId);
+
+		return res.status(200).json({
+			message: "coindcx_token_status",
+			data,
+		});
+	}
+
+	@ControllerError()
+	async verifyToken(req: Request, res: Response) {
+		const userId = this.requireUserId(req);
+		const tradingAccountId = this.requireTradingAccountId(req);
+
+		const data = await this.service.verifyAuthToken(userId, tradingAccountId);
+
+		return res.status(200).json({
+			message: "coindcx_token_verified",
+			data,
+		});
+	}
+
+	@ControllerError()
+	async deleteToken(req: Request, res: Response) {
+		const userId = this.requireUserId(req);
+		const tradingAccountId = this.requireTradingAccountId(req);
+
+		const data = await this.service.deleteAuthToken(userId, tradingAccountId);
+
+		return res.status(200).json({
+			message: "coindcx_credentials_deleted",
+			data,
+		});
 	}
 
 	@ControllerError()
@@ -53,7 +110,9 @@ export class CoinDCXController {
 		const order = (req.body as any)?.order;
 
 		if (!order || !order.symbol || !order.side || !order.quantity) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "invalid_order_payload" });
+			return res.status(HttpStatusCode._BAD_REQUEST).json({
+				message: "invalid_order_payload",
+			});
 		}
 
 		const result = await this.service.placeOrder({
@@ -62,7 +121,10 @@ export class CoinDCXController {
 			order,
 		});
 
-		return res.json({ message: "order_placed", data: result });
+		return res.status(200).json({
+			message: "order_placed",
+			data: result,
+		});
 	}
 
 	@ControllerError()
@@ -72,7 +134,9 @@ export class CoinDCXController {
 		const orderId = String((req.body as any)?.orderId ?? "").trim();
 
 		if (!orderId) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "orderId_required" });
+			return res.status(HttpStatusCode._BAD_REQUEST).json({
+				message: "orderId_required",
+			});
 		}
 
 		const result = await this.service.modifyOrder({
@@ -83,7 +147,10 @@ export class CoinDCXController {
 			price: (req.body as any)?.price,
 		});
 
-		return res.json({ message: "order_modified", data: result });
+		return res.status(200).json({
+			message: "order_modified",
+			data: result,
+		});
 	}
 
 	@ControllerError()
@@ -93,61 +160,107 @@ export class CoinDCXController {
 		const orderId = String((req.body as any)?.orderId ?? "").trim();
 
 		if (!orderId) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "orderId_required" });
+			return res.status(HttpStatusCode._BAD_REQUEST).json({
+				message: "orderId_required",
+			});
 		}
 
-		const result = await this.service.cancelOrder({ userId, tradingAccountId, orderId });
-		return res.json({ message: "order_cancelled", data: result });
+		const result = await this.service.cancelOrder({
+			userId,
+			tradingAccountId,
+			orderId,
+		});
+
+		return res.status(200).json({
+			message: "order_cancelled",
+			data: result,
+		});
 	}
 
 	@ControllerError()
 	async getOrders(req: Request, res: Response) {
 		const userId = this.requireUserId(req);
 		const tradingAccountId = this.requireTradingAccountId(req);
+
 		const data = await this.service.getOrders(userId, tradingAccountId);
-		return res.json({ message: "orders", data });
+
+		return res.status(200).json({
+			message: "orders",
+			data,
+		});
 	}
 
 	@ControllerError()
 	async getPositions(req: Request, res: Response) {
 		const userId = this.requireUserId(req);
 		const tradingAccountId = this.requireTradingAccountId(req);
+
 		const data = await this.service.getPositions(userId, tradingAccountId);
-		return res.json({ message: "positions", data });
+
+		return res.status(200).json({
+			message: "positions",
+			data,
+		});
 	}
 
 	@ControllerError()
 	async getHoldings(req: Request, res: Response) {
 		const userId = this.requireUserId(req);
 		const tradingAccountId = this.requireTradingAccountId(req);
+
 		const data = await this.service.getHoldings(userId, tradingAccountId);
-		return res.json({ message: "holdings", data });
+
+		return res.status(200).json({
+			message: "holdings",
+			data,
+		});
 	}
 
 	@ControllerError()
 	async executePending(req: Request, res: Response) {
 		const batchSize = Number((req.body as any)?.batchSize ?? undefined);
+
 		const data = await this.service.executePendingBatch({
 			batchSize: Number.isFinite(batchSize) ? batchSize : undefined,
 		});
-		return res.json({ message: "executed", data });
+
+		return res.status(200).json({
+			message: "executed",
+			data,
+		});
 	}
 
 	@ControllerError()
 	async publicTicker(req: Request, res: Response) {
 		const market = String((req.query as any)?.market ?? "").trim() || undefined;
+
 		const data = await this.service.getPublicTicker({ market });
-		return res.json({ message: "ticker", data });
+
+		return res.status(200).json({
+			message: "ticker",
+			data,
+		});
 	}
 
 	@ControllerError()
 	async publicOrderbook(req: Request, res: Response) {
-		const market = String((req.query as any)?.market ?? (req.query as any)?.symbol ?? "").trim();
+		const market = String(
+			(req.query as any)?.market ??
+			(req.query as any)?.symbol ??
+			""
+		).trim();
+
 		if (!market) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({ message: "market_required" });
+			return res.status(HttpStatusCode._BAD_REQUEST).json({
+				message: "market_required",
+			});
 		}
 
 		const data = await this.service.getPublicOrderbook({ market });
-		return res.json({ message: "orderbook", data });
+
+		return res.status(200).json({
+			message: "orderbook",
+			data,
+		});
 	}
 }

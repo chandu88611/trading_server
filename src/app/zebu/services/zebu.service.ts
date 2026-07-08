@@ -888,6 +888,13 @@ export class ZebuService {
 			return { exchange, symbol: explicitTsym };
 		}
 
+		if (instrumentType === "OPTIONS" && (signal.brokerInstrumentId || signal.instrumentToken)) {
+			throw {
+				statusCode: HttpStatusCode._BAD_REQUEST,
+				message: "zebu_enriched_option_requires_trading_symbol",
+			};
+		}
+
 		if (isDerivative) {
 			const underlying = String((signal as any).underlying ?? signal.symbol ?? "").trim().toUpperCase();
 			const exp = this.formatNorenExpiry((signal as any).expiry);
@@ -1059,6 +1066,8 @@ export class ZebuService {
 			entryOrderId,
 			stopOrderId: null,
 			targetOrderId: null,
+			token: signal.instrumentToken ?? null,
+			tickSize: signal.tickSize != null ? Number(signal.tickSize) : null,
 			stopLoss: signal.stopLoss != null ? Number(signal.stopLoss) : null,
 			takeProfit: signal.takeProfit != null ? Number(signal.takeProfit) : null,
 			stopLossDistance: signal.stopLossDistance != null ? Number(signal.stopLossDistance) : null,
@@ -1721,4 +1730,5 @@ export class ZebuService {
 		});
 		return { ok: true, processed: trades.length, executed, failed };
 	}
+
 }

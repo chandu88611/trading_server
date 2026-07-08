@@ -262,4 +262,16 @@ export class AdminController {
   async listTradingViewAlerts(req: AuthRequest, res: Response) {
     res.json({ message: "admin_tradingview_alerts", data: await this.service.listTradingViewAlerts(req.query ?? {}) });
   }
+
+  @ControllerError()
+  async syncBrokerInstruments(req: AuthRequest, res: Response) {
+    const data = await this.service.syncBrokerInstruments((req.body as any)?.segments);
+    await this.service.recordAudit({
+      ...auditContext(req),
+      action: "admin.broker_instruments.sync",
+      entityType: "broker_instruments",
+      metadata: data,
+    });
+    res.json({ message: "broker_instruments_synced", data });
+  }
 }

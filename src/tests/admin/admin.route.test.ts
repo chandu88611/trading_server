@@ -102,3 +102,33 @@ test("AdminRouter: exposes settings and payments contracts", async () => {
     if (app) await app.close();
   }
 });
+
+test("AdminRouter: exposes manual broker instrument sync to admins", async () => {
+  let capturedSegments: string[] | undefined;
+  const restoreSync = patch(AdminService.prototype, "syncBrokerInstruments", async (segments: string[]) => {
+    capturedSegments = segments;
+    return { skipped: false, segments: [{ exchange: "NFO", count: 10 }] };
+  });
+  const restoreAudit = patch(AdminService.prototype, "recordAudit", async () => undefined);
+  let app: Awaited<ReturnType<typeof startAdminApp>> | null = null;
+
+  try {
+    app = await startAdminApp();
+    const result = await requestJson(`${app.baseUrl}/admin/instruments/sync`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token(1, [Roles.ADMIN])}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ segments: ["NFO"] }),
+    });
+
+    assert.equal(result.status, 200);
+    assert.deepEqual(capturedSegments, ["NFO"]);
+    assert.equal(result.body.message, "broker_instruments_synced");
+  } finally {
+    restoreAudit();
+    restoreSync();
+    if (app) await app.close();
+  }
+});

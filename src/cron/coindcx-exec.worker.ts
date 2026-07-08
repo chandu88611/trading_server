@@ -10,7 +10,7 @@ let inFlight = false;
 let lastDbInitErrorAt = 0;
 
 setInterval(async () => {
-	if (inFlight) return;
+	if (inFlight) return;	
 	inFlight = true;
 
 	try {

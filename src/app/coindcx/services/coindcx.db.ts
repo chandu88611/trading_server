@@ -22,41 +22,112 @@ export class CoinDCXDB {
 		});
 	}
 
-	async updateAccountMeta(account: UserTradingAccount, metaPatch: Record<string, any>) {
-		const nextMeta = { ...(account.accountMeta ?? {}), ...metaPatch };
+	async updateAccountMeta(
+		account: UserTradingAccount,
+		metaPatch: Record<string, any>
+	) {
+		const nextMeta = {
+			...(account.accountMeta ?? {}),
+			...metaPatch,
+		};
+
 		account.accountMeta = nextMeta;
+
+		return this.accountRepo.save(account);
+	}
+
+	async clearAuthMeta(account: UserTradingAccount) {
+		const meta = { ...(account.accountMeta ?? {}) };
+
+		delete meta.coindcx;
+		delete meta.coinDCX;
+		delete meta.coinDcx;
+		delete meta.apiKey;
+		delete meta.apiSecret;
+		delete meta.coindcxApiKey;
+		delete meta.coindcxApiSecret;
+		delete meta.baseUrl;
+		delete meta.coindcxBaseUrl;
+
+		account.accountMeta = meta;
+
 		return this.accountRepo.save(account);
 	}
 
 	async markJobInProgress(job: TradeSignal) {
-		await this.tradeSignalRepo.manager.query(
-			`UPDATE trade_signals_status SET status='in_progress' WHERE id=$1`,
-			[job.status.id]
-		);
-	}
+		if (!job?.status?.id) return;
 
-	async markJobSuccess(job: TradeSignal) {
-		await this.tradeSignalRepo.manager.query(
-			`UPDATE trade_signals_status SET status='completed' WHERE id=$1`,
-			[job.status.id]
-		);
-	}
-
-	async markJobFailed(job: TradeSignal, error: string) {
-		void error;
 		await this.tradeSignalRepo.manager.query(
 			`
 			UPDATE trade_signals_status
-			SET status='failed',
-					attempts=attempts+1
-			WHERE id=$1
+			SET status = 'in_progress',
+				updated_at = NOW()
+			WHERE id = $1
 			`,
 			[job.status.id]
 		);
 	}
 
+	async markJobSuccess(job: TradeSignal, brokerOrderId?: string | null) {
+		if (!job?.status?.id) return;
+
+		await this.tradeSignalRepo.manager.query(
+			`
+			UPDATE trade_signals_status
+			SET status = 'completed',
+				updated_at = NOW()
+			WHERE id = $1
+			`,
+			[job.status.id]
+		);
+
+		if (brokerOrderId) {
+			try {
+				await this.tradeSignalRepo.manager.query(
+					`
+					UPDATE trade_signals
+					SET broker_order_id = $2,
+						updated_at = NOW()
+					WHERE id = $1
+					`,
+					[job.id, brokerOrderId]
+				);
+			} catch {
+				// Ignore if broker_order_id column does not exist in current schema.
+			}
+		}
+	}
+
+	async markJobFailed(job: TradeSignal, error: string) {
+		if (!job?.status?.id) return;
+
+		await this.tradeSignalRepo.manager.query(
+			`
+			UPDATE trade_signals_status
+			SET status = 'failed',
+				attempts = COALESCE(attempts, 0) + 1,
+				error = $2,
+				updated_at = NOW()
+			WHERE id = $1
+			`,
+			[job.status.id, error]
+		).catch(async () => {
+			await this.tradeSignalRepo.manager.query(
+				`
+				UPDATE trade_signals_status
+				SET status = 'failed',
+					attempts = COALESCE(attempts, 0) + 1,
+					updated_at = NOW()
+				WHERE id = $1
+				`,
+				[job.status.id]
+			);
+		});
+	}
+
 	async claimPendingTrades(limit: number) {
 		const qr = AppDataSource.createQueryRunner();
+
 		await qr.connect();
 		await qr.startTransaction();
 
@@ -70,12 +141,17 @@ export class CoinDCXDB {
 				.innerJoin("ts.tradingAccount", "ta")
 				.innerJoin("ta.broker", "b")
 				.where("s.status = :status", { status: "pending" })
-				.andWhere("(b.code = :code OR b.name = :name)", { code: "COINDCX", name: "CoinDCX" })
+				.andWhere("(b.code = :code OR b.name = :name)", {
+					code: "COINDCX",
+					name: "CoinDCX",
+				})
 				.orderBy("s.tradeSignalId", "ASC")
 				.limit(limit)
 				.setLock("pessimistic_write");
 
-			if (typeof qb.setOnLocked === "function") qb.setOnLocked("skip_locked");
+			if (typeof qb.setOnLocked === "function") {
+				qb.setOnLocked("skip_locked");
+			}
 
 			const rows: Array<{ id: any }> = await qb.getRawMany();
 			const ids = rows.map((r) => Number(r.id)).filter(Boolean);
@@ -88,7 +164,10 @@ export class CoinDCXDB {
 			await statusRepo
 				.createQueryBuilder()
 				.update(TradeSignalStatus)
-				.set({ status: "in_progress", updatedAt: new Date() })
+				.set({
+					status: "in_progress",
+					updatedAt: new Date(),
+				})
 				.where("tradeSignalId IN (:...ids)", { ids })
 				.execute();
 
@@ -99,10 +178,15 @@ export class CoinDCXDB {
 				.leftJoinAndSelect("ta.broker", "b")
 				.leftJoinAndSelect("ts.status", "tss")
 				.where("ts.id IN (:...ids)", { ids })
-				.andWhere("(b.code = :code OR b.name = :name)", { code: "COINDCX", name: "CoinDCX" })
+				.andWhere("(b.code = :code OR b.name = :name)", {
+					code: "COINDCX",
+					name: "CoinDCX",
+				})
+				.orderBy("ts.id", "ASC")
 				.getMany();
 
 			await qr.commitTransaction();
+
 			return signals;
 		} catch (e) {
 			await qr.rollbackTransaction();
@@ -112,8 +196,16 @@ export class CoinDCXDB {
 		}
 	}
 
-	async updateTradeStatus(data: { id: number; status: string; error?: string }[]) {
+	async updateTradeStatus(
+		data: {
+			id: number;
+			status: string;
+			error?: string;
+			brokerOrderId?: string | null;
+		}[]
+	) {
 		const ids = data.map((d) => d.id).filter(Boolean);
+
 		if (!ids.length) return;
 
 		const jobs = await this.tradeSignalRepo.find({
@@ -126,6 +218,7 @@ export class CoinDCXDB {
 		await Promise.all(
 			data.map(async (item) => {
 				const job = jobMap.get(item.id);
+
 				if (!job?.status?.id) return;
 
 				const status = String(item.status ?? "").toLowerCase();
@@ -135,20 +228,30 @@ export class CoinDCXDB {
 					return;
 				}
 
-				if (status === "completed" || status === "success" || status === "executed") {
-					await this.markJobSuccess(job);
+				if (
+					status === "completed" ||
+					status === "success" ||
+					status === "executed"
+				) {
+					await this.markJobSuccess(job, item.brokerOrderId);
 					return;
 				}
 
 				if (status === "failed" || status === "error") {
-					await this.markJobFailed(job, item.error ?? "execution_failed");
+					await this.markJobFailed(
+						job,
+						item.error ?? "execution_failed"
+					);
 					return;
 				}
 
 				await this.tradeSignalStatusRepo
 					.createQueryBuilder()
 					.update(TradeSignalStatus)
-					.set({ status: item.status, updatedAt: new Date() })
+					.set({
+						status: item.status,
+						updatedAt: new Date(),
+					})
 					.where("tradeSignalId = :id", { id: item.id })
 					.execute();
 			})

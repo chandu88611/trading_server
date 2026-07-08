@@ -6,6 +6,31 @@ export type CoinDCXAuthPayload = {
 	baseUrl?: string;
 };
 
+export type CoinDCXTokenStatus = {
+	tradingAccountId: number;
+	broker: string | null;
+	hasApiKey: boolean;
+	hasApiSecret: boolean;
+	baseUrl?: string | null;
+	connectedAt?: string | null;
+	verifiedAt?: string | null;
+	isReady: boolean;
+};
+
+export type CoinDCXVerifyTokenResult = {
+	valid: boolean;
+	tradingAccountId: number;
+	broker: string | null;
+	checkedAt: string;
+	error?: string;
+};
+
+export type CoinDCXDeleteTokenResult = {
+	deleted: boolean;
+	tradingAccountId: number;
+	broker: string | null;
+};
+
 export type CoinDCXOrderPayload = {
 	symbol: string;
 	side: "BUY" | "SELL";

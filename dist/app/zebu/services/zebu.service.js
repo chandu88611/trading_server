@@ -534,6 +534,7 @@ class ZebuService {
                 orders: "OrderBook",
                 positions: "PositionBook",
                 holdings: "Holdings",
+                limits: "Limits",
                 quotes: "GetQuotes",
             };
             const action = actionMap[path];
@@ -543,6 +544,9 @@ class ZebuService {
             const jData = { uid: config.uid };
             if (action !== "OrderBook" && action !== "GetQuotes" && config.actid)
                 jData.actid = config.actid;
+            // Noren Holdings requires a product code; default to CNC ("C").
+            if (action === "Holdings")
+                jData.prd = String(body?.product ?? "C");
             if (action === "GetQuotes") {
                 jData.exch = this.normalizeExchange(body?.exchange);
                 jData.token = String(body?.token ?? "").trim();
@@ -683,6 +687,12 @@ class ZebuService {
         }
         if (explicitTsym) {
             return { exchange, symbol: explicitTsym };
+        }
+        if (instrumentType === "OPTIONS" && (signal.brokerInstrumentId || signal.instrumentToken)) {
+            throw {
+                statusCode: constants_1.HttpStatusCode._BAD_REQUEST,
+                message: "zebu_enriched_option_requires_trading_symbol",
+            };
         }
         if (isDerivative) {
             const underlying = String(signal.underlying ?? signal.symbol ?? "").trim().toUpperCase();
@@ -835,6 +845,8 @@ class ZebuService {
             entryOrderId,
             stopOrderId: null,
             targetOrderId: null,
+            token: signal.instrumentToken ?? null,
+            tickSize: signal.tickSize != null ? Number(signal.tickSize) : null,
             stopLoss: signal.stopLoss != null ? Number(signal.stopLoss) : null,
             takeProfit: signal.takeProfit != null ? Number(signal.takeProfit) : null,
             stopLossDistance: signal.stopLossDistance != null ? Number(signal.stopLossDistance) : null,

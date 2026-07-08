@@ -72,9 +72,25 @@ __decorate([
     __metadata("design:type", Object)
 ], TradeSignal.prototype, "strike", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: "trading_symbol", type: "varchar", length: 60, nullable: true }),
+    (0, typeorm_1.Column)({ name: "trading_symbol", type: "varchar", length: 120, nullable: true }),
     __metadata("design:type", Object)
 ], TradeSignal.prototype, "tradingSymbol", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "source_action", type: "varchar", length: 10, nullable: true }),
+    __metadata("design:type", Object)
+], TradeSignal.prototype, "sourceAction", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "broker_instrument_id", type: "bigint", nullable: true }),
+    __metadata("design:type", Object)
+], TradeSignal.prototype, "brokerInstrumentId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "instrument_token", type: "varchar", length: 80, nullable: true }),
+    __metadata("design:type", Object)
+], TradeSignal.prototype, "instrumentToken", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: "tick_size", type: "numeric", precision: 18, scale: 8, nullable: true }),
+    __metadata("design:type", Object)
+], TradeSignal.prototype, "tickSize", void 0);
 __decorate([
     (0, typeorm_1.Column)({ name: "signal_time", type: "timestamptz" }),
     __metadata("design:type", Date)

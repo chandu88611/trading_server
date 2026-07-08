@@ -22,6 +22,7 @@ import indiaRouter from "../india/india.routes";
 import analyticsRouter from "./analytics.routes";
 import adminRouter from "../admin/admin.routes";
 import copyExecutionRouter from "../copyExecution/copyExecution.routes";
+import { DeltaRouter } from "../deltaExchange/routes/delta";
 
 export class ApplicationRouter {
   private applicationRoutes: Router;
@@ -67,6 +68,7 @@ export class ApplicationRouter {
     );
     this.applicationRoutes.use("/admin/analytics", analyticsRouter);
     this.applicationRoutes.use("/admin", adminRouter);
+    this.applicationRoutes.use("/delta", new DeltaRouter().getRouter());
 
   }
 

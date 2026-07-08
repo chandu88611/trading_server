@@ -32,6 +32,45 @@ class TradingAccountController {
         }
         return undefined;
     }
+    normalizeDeltaFields(payload) {
+        const brokerCode = this.firstNonEmptyString(payload.broker)?.toUpperCase();
+        if (brokerCode !== "DELTA" && brokerCode !== "DELTA_EXCHANGE")
+            return;
+        const meta = this.asObject(payload.accountMeta);
+        const deltaMeta = this.asObject(meta.delta);
+        const apiKey = this.firstNonEmptyString(payload.apiKey, meta.apiKey, meta.deltaApiKey, deltaMeta.apiKey);
+        const apiSecret = this.firstNonEmptyString(payload.apiSecret, payload.appKey, meta.apiSecret, meta.deltaApiSecret, deltaMeta.apiSecret);
+        const baseUrl = this.firstNonEmptyString(meta.baseUrl, meta.deltaBaseUrl, deltaMeta.baseUrl, process.env.DELTA_BASE_URL, "https://api.delta.exchange/v2");
+        meta.delta = {
+            ...deltaMeta,
+            ...(apiKey ? { apiKey } : {}),
+            ...(apiSecret ? { apiSecret } : {}),
+            ...(baseUrl ? { baseUrl } : {}),
+            updatedAt: new Date().toISOString(),
+        };
+        if (apiKey) {
+            meta.deltaApiKey = apiKey;
+        }
+        if (apiSecret) {
+            meta.deltaApiSecret = apiSecret;
+        }
+        if (baseUrl) {
+            meta.deltaBaseUrl = baseUrl;
+        }
+        payload.accountMeta = meta;
+        if (!payload.accountId) {
+            const existingAccountId = this.firstNonEmptyString(meta.accountId, deltaMeta.accountId);
+            if (existingAccountId) {
+                payload.accountId = existingAccountId;
+            }
+            else if (apiKey) {
+                payload.accountId = `DELTA-${apiKey.slice(-6)}`;
+            }
+            else if (payload.accountLabel) {
+                payload.accountId = payload.accountLabel;
+            }
+        }
+    }
     normalizeIndianMarketFields(payload) {
         const brokerCode = this.firstNonEmptyString(payload.broker)?.toUpperCase();
         const meta = this.asObject(payload.accountMeta);
@@ -171,13 +210,17 @@ class TradingAccountController {
     async createMyAccount(req, res) {
         const userId = Number(req.auth.userId);
         const payload = req.body ?? {};
-        console.log("Received request to create trading account with payload", { userId, payload });
+        console.log("Received request to create trading account with payload", {
+            userId,
+            payload,
+        });
         if (!payload.accountLabel) {
             res.status(400).json({ message: "missing_required_fields" });
             return;
         }
         this.normalizeIndianMarketFields(payload);
         this.normalizeCoinDCXFields(payload);
+        this.normalizeDeltaFields(payload);
         const account = await this.service.createMyAccount(userId, payload);
         res.status(201).json({ account });
     }

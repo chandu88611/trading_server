@@ -62,6 +62,7 @@ const mt5Listener_db_1 = require("./app/mt5Listener/mt5Listener.db");
 const auth_1 = require("./middleware/auth");
 const admin_service_1 = require("./app/admin/admin.service");
 const copyExecution_service_1 = require("./app/copyExecution/copyExecution.service");
+const brokerInstrument_service_1 = require("./app/india/options/brokerInstrument.service");
 dotenv_1.default.config();
 const DEFAULT_JSON_LIMIT = "100kb";
 const CTRADER_SYMBOL_CACHE_JSON_LIMIT = "5mb";
@@ -103,6 +104,7 @@ class Server {
         this.mt5ListenerService = new mt5Listener_services_1.Mt5ListenerServices(new mt5Listener_db_1.Mt5ListenerDBServices(data_source_1.default));
         this.adminService = new admin_service_1.AdminService();
         this.copyExecutionService = new copyExecution_service_1.CopyExecutionService();
+        this.brokerInstrumentService = new brokerInstrument_service_1.BrokerInstrumentService();
         this.config();
         this.routes();
     }
@@ -117,6 +119,8 @@ class Server {
             Promise.resolve().then(() => __importStar(require("./cron/coindcx-exec.worker"))),
             Promise.resolve().then(() => __importStar(require("./cron/crm-sync.cron"))),
             Promise.resolve().then(() => __importStar(require("./cron/stale-jobs.worker"))),
+            Promise.resolve().then(() => __importStar(require("./cron/delta-exec.worker"))),
+            Promise.resolve().then(() => __importStar(require("./cron/zebu-instrument-sync.cron"))),
         ]);
         Server.backgroundWorkersStarted = true;
     }
@@ -256,6 +260,7 @@ class Server {
             await this.mt5ListenerService.ensureSchema();
             await this.adminService.ensureSchema();
             await this.copyExecutionService.ensureSchema();
+            await this.brokerInstrumentService.ensureSchema();
             const enableSchemaValidation = String(process.env.ENABLE_SCHEMA_VALIDATION || "").toLowerCase() ===
                 "true";
             if (enableSchemaValidation) {

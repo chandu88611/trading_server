@@ -15,7 +15,7 @@ export type StopLossTriggerMethod =
 
 // ── Indian-market instrument classification (explicit, not inferred) ──
 export type IndianInstrumentType = "EQUITY" | "FUTURES" | "OPTIONS";
-export type IndianProduct = "INTRADAY" | "DELIVERY" | "MARGIN";
+export type IndianProduct = "INTRADAY" | "DELIVERY" | "MARGIN" | "MIS" | "NRML" | "I" | "C" | "M";
 export type IndianOptionType = "CE" | "PE";
 
 export type IndianInstrumentFields = {
@@ -26,6 +26,10 @@ export type IndianInstrumentFields = {
   optionType?: IndianOptionType | null; // OPTIONS only
   strike?: number | null;            // OPTIONS only
   tradingSymbol?: string | null;     // explicit broker tsym (overrides builder)
+  sourceAction?: string | null;
+  brokerInstrumentId?: number | null;
+  instrumentToken?: string | null;
+  tickSize?: number | null;
 };
 
 export type StrategyExecutionFields = IndianInstrumentFields & {
@@ -75,6 +79,8 @@ export interface ICreateAlertSnapshot extends StrategyExecutionFields {
   currency?: string | null;
   baseCurrency?: string | null;
   action?: TradeAction;
+  lots?: number | null;
+  strategy?: string | null;
 }
 
 export type ICreateStrategyManagedAlert = Omit<

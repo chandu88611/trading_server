@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SubscriberTradeAlert = exports.ZebuProtectionMonitor = exports.Mt5Symbol = exports.CTraderTrailingTakeProfitMonitor = exports.SupportTicketMessage = exports.SupportTicket = exports.AdminStrategyTrade = exports.AdminStrategyTradeScheduleSetting = exports.WithdrawalSetting = exports.WithdrawalRequest = exports.ReferralRewardCredit = exports.UserBillingDetails = exports.CrmSyncOutbox = exports.UserRiskLimits = exports.UserEdgingStatus = exports.UserStrategyInstance = exports.Strategy = exports.PlanAdminWebhookToken = exports.PlanStrategy = exports.Broker = exports.UserTradingAccount = exports.TradeSignalStatus = exports.TradeSignal = exports.AlertSnapshot = exports.SubscriptionPlan = exports.UserSubscription = exports.RazorpayOrder = exports.SubscriptionInvoice = exports.SubscriptionPayment = exports.RefreshToken = exports.AuthProvider = exports.User = void 0;
+exports.BrokerInstrument = exports.SubscriberTradeAlert = exports.ZebuProtectionMonitor = exports.Mt5Symbol = exports.CTraderTrailingTakeProfitMonitor = exports.SupportTicketMessage = exports.SupportTicket = exports.AdminStrategyTrade = exports.AdminStrategyTradeScheduleSetting = exports.WithdrawalSetting = exports.WithdrawalRequest = exports.ReferralRewardCredit = exports.UserBillingDetails = exports.CrmSyncOutbox = exports.UserRiskLimits = exports.UserEdgingStatus = exports.UserStrategyInstance = exports.Strategy = exports.PlanAdminWebhookToken = exports.PlanStrategy = exports.Broker = exports.UserTradingAccount = exports.TradeSignalStatus = exports.TradeSignal = exports.AlertSnapshot = exports.SubscriptionPlan = exports.UserSubscription = exports.RazorpayOrder = exports.SubscriptionInvoice = exports.SubscriptionPayment = exports.RefreshToken = exports.AuthProvider = exports.User = void 0;
 var User_1 = require("./User");
 Object.defineProperty(exports, "User", { enumerable: true, get: function () { return User_1.User; } });
 var AuthProvider_1 = require("./AuthProvider");
@@ -80,3 +80,5 @@ var ZebuProtectionMonitor_1 = require("./ZebuProtectionMonitor");
 Object.defineProperty(exports, "ZebuProtectionMonitor", { enumerable: true, get: function () { return ZebuProtectionMonitor_1.ZebuProtectionMonitor; } });
 var SubscriberTradeAlert_1 = require("./SubscriberTradeAlert");
 Object.defineProperty(exports, "SubscriberTradeAlert", { enumerable: true, get: function () { return SubscriberTradeAlert_1.SubscriberTradeAlert; } });
+var BrokerInstrument_1 = require("./BrokerInstrument");
+Object.defineProperty(exports, "BrokerInstrument", { enumerable: true, get: function () { return BrokerInstrument_1.BrokerInstrument; } });

@@ -111,7 +111,12 @@ class AlertSnapshotDB {
             `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS expiry DATE;`,
             `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS option_type VARCHAR(4);`,
             `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS strike NUMERIC(15, 4);`,
-            `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS trading_symbol VARCHAR(60);`,
+            `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS trading_symbol VARCHAR(120);`,
+            `ALTER TABLE trade_signals ALTER COLUMN trading_symbol TYPE VARCHAR(120);`,
+            `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS source_action VARCHAR(10);`,
+            `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS broker_instrument_id BIGINT;`,
+            `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS instrument_token VARCHAR(80);`,
+            `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS tick_size NUMERIC(18, 8);`,
             `CREATE INDEX IF NOT EXISTS idx_trade_signals_instrument_type ON trade_signals(instrument_type);`,
             `CREATE INDEX IF NOT EXISTS idx_alert_snapshots_admin_strategy_trade_id ON alert_snapshots(admin_strategy_trade_id);`,
             `CREATE INDEX IF NOT EXISTS idx_alert_snapshots_strategy_created_at ON alert_snapshots(strategy_id, created_at DESC);`,
@@ -331,7 +336,7 @@ class AlertSnapshotDB {
             .innerJoin("ts.status", "tss")
             .where("ts.tradingAccountId IN (:...tradingAccountIds)", { tradingAccountIds })
             .andWhere("UPPER(ts.symbol) = UPPER(:symbol)", { symbol: symbol.trim() })
-            .andWhere("UPPER(ts.action) = :oppositeAction", { oppositeAction })
+            .andWhere("UPPER(COALESCE(ts.sourceAction, ts.action)) = :oppositeAction", { oppositeAction })
             .andWhere("tss.status = :completedStatus", { completedStatus: "completed" })
             .andWhere("((ts.orderId IS NOT NULL AND ts.orderId > 0) OR (ts.brokerOrderId IS NOT NULL AND ts.brokerOrderId > 0) OR (ts.brokerPositionId IS NOT NULL AND ts.brokerPositionId > 0))")
             .andWhere(exchange?.trim() ? "UPPER(ts.exchange) = UPPER(:exchange)" : "1=1", {

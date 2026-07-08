@@ -27,6 +27,7 @@ const india_routes_1 = __importDefault(require("../india/india.routes"));
 const analytics_routes_1 = __importDefault(require("./analytics.routes"));
 const admin_routes_1 = __importDefault(require("../admin/admin.routes"));
 const copyExecution_routes_1 = __importDefault(require("../copyExecution/copyExecution.routes"));
+const delta_1 = require("../deltaExchange/routes/delta");
 class ApplicationRouter {
     constructor() {
         this.applicationRoutes = (0, express_1.Router)();
@@ -57,6 +58,7 @@ class ApplicationRouter {
         this.applicationRoutes.use("/integrations/crm/support", supportTicketRouter.getIntegrationRouter());
         this.applicationRoutes.use("/admin/analytics", analytics_routes_1.default);
         this.applicationRoutes.use("/admin", admin_routes_1.default);
+        this.applicationRoutes.use("/delta", new delta_1.DeltaRouter().getRouter());
     }
     getRouter() {
         return this.applicationRoutes;

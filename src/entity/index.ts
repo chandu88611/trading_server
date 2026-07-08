@@ -31,3 +31,4 @@ export { CTraderTrailingTakeProfitMonitor } from "./CTraderTrailingTakeProfitMon
 export { Mt5Symbol } from "./Mt5Symbol";
 export { ZebuProtectionMonitor } from "./ZebuProtectionMonitor";
 export { SubscriberTradeAlert } from "./SubscriberTradeAlert";
+export { BrokerInstrument } from "./BrokerInstrument";

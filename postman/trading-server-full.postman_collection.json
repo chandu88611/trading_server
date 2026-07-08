@@ -3264,6 +3264,176 @@
           }
         },
         {
+          "name": "Create Lux BUY Option Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-webhook-token",
+                "value": "{{planWebhookToken}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tradingview/alerts/strategy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tradingview",
+                "alerts",
+                "strategy"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"RELIANCE\",\n  \"action\": \"BUY\",\n  \"exchange\": \"NSE\",\n  \"product\": \"INTRADAY\",\n  \"lots\": 2,\n  \"strategy\": \"LUX_ALGO\",\n  \"close\": 1450\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create Lux SELL Option Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-webhook-token",
+                "value": "{{planWebhookToken}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tradingview/alerts/strategy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tradingview",
+                "alerts",
+                "strategy"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"RELIANCE\",\n  \"action\": \"SELL\",\n  \"exchange\": \"NSE\",\n  \"product\": \"INTRADAY\",\n  \"lots\": 2,\n  \"strategy\": \"LUX_ALGO\",\n  \"close\": 1450\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Reject Lux Option Alert With Invalid Lots",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"rejects invalid option lots\", function () { pm.response.to.have.status(422); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-webhook-token",
+                "value": "{{planWebhookToken}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tradingview/alerts/strategy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tradingview",
+                "alerts",
+                "strategy"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"RELIANCE\",\n  \"action\": \"BUY\",\n  \"exchange\": \"NSE\",\n  \"product\": \"INTRADAY\",\n  \"lots\": 0,\n  \"strategy\": \"LUX_ALGO\",\n  \"close\": 1450\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Force Zebu Instrument Sync",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/instruments/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "instruments",
+                "sync"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"segments\": [\"NFO\", \"BFO\", \"MCX\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Alert History",
           "request": {
             "method": "GET",

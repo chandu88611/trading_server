@@ -578,9 +578,23 @@ export function getTradingOpenApi() {
         post: {
           summary: 'Create strategy-managed alert snapshot',
           description:
-            'Accepts the admin plan webhook token and fans out one strategy-managed TradingView alert to all active subscribers of that plan. The token may be supplied via `x-webhook-token`, `Authorization: Bearer <token>`, query `token`, or body `token`/`webhook_token`.',
+            'Accepts the admin plan webhook token and fans out one strategy-managed TradingView alert to all active subscribers of that plan. Option-enabled strategies accept simple Lux BUY/SELL alerts and resolve one liquid broker-ready option contract before fanout. The token may be supplied via `x-webhook-token`, `Authorization: Bearer <token>`, query `token`, or body `token`/`webhook_token`.',
           security: [{ bearerAuth: [] }],
-          responses: { '201': { description: 'Strategy-managed alert fanout created' } },
+          responses: {
+            '201': { description: 'Strategy-managed alert fanout created' },
+            '422': { description: 'No acceptable option contract could be resolved' },
+          },
+        },
+      },
+      '/admin/instruments/sync': {
+        post: {
+          summary: 'Force Zebu instrument-master sync',
+          description: 'Admin-only recovery endpoint that downloads and transactionally upserts NFO, BFO, and MCX instrument masters.',
+          security: [{ bearerAuth: [] }],
+          responses: {
+            '200': { description: 'Instrument masters synchronized' },
+            '500': { description: 'Instrument sync failed and was rolled back' },
+          },
         },
       },
     },

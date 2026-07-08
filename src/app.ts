@@ -24,6 +24,7 @@ import { Mt5ListenerDBServices } from "./app/mt5Listener/mt5Listener.db";
 import { getJwtSecret } from "./middleware/auth";
 import { AdminService } from "./app/admin/admin.service";
 import { CopyExecutionService } from "./app/copyExecution/copyExecution.service";
+import { BrokerInstrumentService } from "./app/india/options/brokerInstrument.service";
 
 dotenv.config();
 
@@ -82,6 +83,7 @@ export default class Server {
   private mt5ListenerService: Mt5ListenerServices;
   private adminService: AdminService;
   private copyExecutionService: CopyExecutionService;
+  private brokerInstrumentService: BrokerInstrumentService;
 
   constructor() {
     this.app = express();
@@ -99,6 +101,7 @@ export default class Server {
     this.mt5ListenerService = new Mt5ListenerServices(new Mt5ListenerDBServices(AppDataSource));
     this.adminService = new AdminService();
     this.copyExecutionService = new CopyExecutionService();
+    this.brokerInstrumentService = new BrokerInstrumentService();
 
     this.config();
     this.routes();
@@ -116,6 +119,8 @@ export default class Server {
       import("./cron/coindcx-exec.worker"),
       import("./cron/crm-sync.cron"),
       import("./cron/stale-jobs.worker"),
+      import("./cron/delta-exec.worker"),
+      import("./cron/zebu-instrument-sync.cron"),
     ]);
 
     Server.backgroundWorkersStarted = true;
@@ -288,6 +293,7 @@ export default class Server {
       await this.mt5ListenerService.ensureSchema();
       await this.adminService.ensureSchema();
       await this.copyExecutionService.ensureSchema();
+      await this.brokerInstrumentService.ensureSchema();
 
       const enableSchemaValidation =
         String(process.env.ENABLE_SCHEMA_VALIDATION || "").toLowerCase() ===

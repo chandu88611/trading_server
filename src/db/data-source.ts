@@ -25,6 +25,7 @@ import {
   Mt5Symbol,
   ZebuProtectionMonitor,
   SubscriberTradeAlert,
+  BrokerInstrument,
 } from "../entity";
 import { AlertSnapshot } from "../entity/AlertSnapshots";
 import { TradeSignal } from "../entity/TradeSignals";
@@ -102,6 +103,7 @@ export const AppDataSource = new DataSource({
     CTraderSymbol,
     Mt5Symbol,
     ZebuProtectionMonitor,
+    BrokerInstrument,
   ],
   migrations: [],
   subscribers: [],

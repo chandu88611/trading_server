@@ -28,6 +28,7 @@ import { selectPrimaryPlanStrategy } from "../../../subscriptionPlan/utils/planS
 import { DistanceMappingService } from "../../../trade/services/distanceMapping.service";
 import { evaluateAdminStrategyTradeSchedule } from "../../../user/utils/adminStrategyTradeSchedule.util";
 import { AdminStrategyTradeStatus } from "../../../../entity/AdminStrategyTrade";
+import { IndianOptionResolverService } from "../../../india/options/indianOptionResolver.service";
 
 export class AlertSnapshotService {
   private alertSnapshotDB: AlertSnapshotDB;
@@ -40,6 +41,7 @@ export class AlertSnapshotService {
   private userDBService: UserDBService;
   private subscriptionPlanService: SubscriptionPlanService;
   private distanceMappingService: DistanceMappingService;
+  private optionResolver: IndianOptionResolverService;
   constructor() {
     this.alertSnapshotDB = new AlertSnapshotDB();
     this.tradeSignalService = new TradeSignalService();
@@ -51,6 +53,38 @@ export class AlertSnapshotService {
     this.userDBService = new UserDBService();
     this.subscriptionPlanService = new SubscriptionPlanService();
     this.distanceMappingService = new DistanceMappingService();
+    this.optionResolver = new IndianOptionResolverService();
+  }
+
+  private normalizeSimplifiedLuxAlert<T extends Partial<ICreateAlertSnapshot>>(payload: T): T {
+    const strategy = String((payload as any).strategy ?? "").trim().toUpperCase();
+    const isSimpleLux = strategy.includes("LUX") || (payload as any).lots !== undefined;
+    if (!isSimpleLux) return payload;
+
+    const now = new Date();
+    const close = Number((payload as any).close);
+    const safeClose = Number.isFinite(close) ? close : 0;
+    const ticker = String((payload as any).ticker ?? "").trim().toUpperCase();
+    const action = String((payload as any).action ?? "").trim().toUpperCase();
+    return {
+      ...payload,
+      market: (payload.market ?? MarketType.INDIAN) as any,
+      exchange: payload.exchange ?? "NSE",
+      interval: payload.interval ?? "signal",
+      barTime: payload.barTime ? new Date(payload.barTime) : now,
+      alertTime: payload.alertTime ? new Date(payload.alertTime) : now,
+      open: payload.open ?? safeClose,
+      close: safeClose,
+      high: payload.high ?? safeClose,
+      low: payload.low ?? safeClose,
+      volume: payload.volume ?? Number((payload as any).lots ?? 0),
+      tradingStrength: payload.tradingStrength ?? 100,
+      executionMode: payload.executionMode ?? "OPEN",
+      entryRef:
+        payload.entryRef ??
+        `lux-${ticker || "unknown"}-${action || "signal"}-${now.getTime()}`.slice(0, 100),
+      orderType: payload.orderType ?? "MARKET",
+    } as T;
   }
 
   private normalizeAction(action: string): "BUY" | "SELL" | null {
@@ -646,6 +680,10 @@ export class AlertSnapshotService {
       | "optionType"
       | "strike"
       | "tradingSymbol"
+      | "sourceAction"
+      | "brokerInstrumentId"
+      | "instrumentToken"
+      | "tickSize"
     >,
     snapshotId: number,
     normalizedAction: "BUY" | "SELL" | "HOLD",
@@ -701,6 +739,10 @@ export class AlertSnapshotService {
       optionType: payload.optionType ?? null,
       strike: payload.strike ?? null,
       tradingSymbol: payload.tradingSymbol ?? null,
+      sourceAction: payload.sourceAction ?? null,
+      brokerInstrumentId: payload.brokerInstrumentId ?? null,
+      instrumentToken: payload.instrumentToken ?? null,
+      tickSize: payload.tickSize ?? null,
     }));
   }
 
@@ -714,13 +756,20 @@ export class AlertSnapshotService {
 
     const up = (v: unknown) => (v == null ? null : String(v).trim().toUpperCase());
     const instrumentType = (up(payload.instrumentType) as any) || "EQUITY";
-    const product = (up(payload.product) as any) || "INTRADAY";
+    const rawProduct = (up(payload.product) as any) || "INTRADAY";
+    const product = ["INTRADAY", "MIS", "I"].includes(rawProduct)
+      ? "I"
+      : ["MARGIN", "NRML", "M"].includes(rawProduct)
+        ? "M"
+        : ["DELIVERY", "CNC", "C"].includes(rawProduct)
+          ? "C"
+          : rawProduct;
     const optionType = up(payload.optionType) as any;
 
     if (!["EQUITY", "FUTURES", "OPTIONS"].includes(instrumentType)) {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "invalid_instrumentType" };
     }
-    if (!["INTRADAY", "DELIVERY", "MARGIN"].includes(product)) {
+    if (!["I", "C", "M"].includes(product)) {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "invalid_product" };
     }
 
@@ -885,13 +934,19 @@ export class AlertSnapshotService {
       );
 
     if (shouldQueueCloseOpposite) {
+      const directionAction =
+        String(payload.sourceAction ?? "").toUpperCase() === "SELL"
+          ? "SELL"
+          : String(payload.sourceAction ?? "").toUpperCase() === "BUY"
+            ? "BUY"
+            : normalizedAction;
       await this.queueEdgingCloseOppositeTrades(
         userTradingAccounts,
         {
           ...payload,
           userId: Number(subscription.userId),
         },
-        normalizedAction as "BUY" | "SELL",
+        directionAction as "BUY" | "SELL",
         queryRunner,
         assetType
       );
@@ -905,7 +960,9 @@ export class AlertSnapshotService {
             snapshot.id,
             normalizedAction,
             assetType,
-            Number(strategyInstance.volume),
+            payload.brokerInstrumentId
+              ? Number(payload.volume)
+              : Number(strategyInstance.volume),
             strategyContext
           )
         : [];
@@ -928,11 +985,13 @@ export class AlertSnapshotService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
-      const normalizedPayload = this.validateAndNormalizeExecutionFields(payload);
+      let normalizedPayload = this.validateAndNormalizeExecutionFields(
+        this.normalizeSimplifiedLuxAlert(payload)
+      );
       this.normalizeIndianInstrument(normalizedPayload as ICreateAlertSnapshot);
-      const executionMode = this.normalizeExecutionMode(normalizedPayload);
-      const assetType = await this.isValidAssetType(normalizedPayload);
-      const normalizedAction =
+      let executionMode = this.normalizeExecutionMode(normalizedPayload);
+      let assetType = await this.isValidAssetType(normalizedPayload);
+      let normalizedAction: "BUY" | "SELL" | "HOLD" | null =
         this.normalizeAction(String(normalizedPayload.action ?? "")) ??
         (executionMode === "AMEND_SLTP" ? "HOLD" : null);
       if (!normalizedAction) {
@@ -994,6 +1053,21 @@ export class AlertSnapshotService {
           };
         }
 
+        const optionConfig = this.optionResolver.resolveConfig(
+          (firstPlanStrategy as any)?.strategy?.defaultParams,
+          (strategyInstance as any)?.frozenParams,
+        );
+        normalizedPayload = await this.optionResolver.resolve(normalizedPayload, optionConfig);
+        this.normalizeIndianInstrument(normalizedPayload);
+        executionMode = this.normalizeExecutionMode(normalizedPayload);
+        assetType = await this.isValidAssetType(normalizedPayload);
+        normalizedAction =
+          this.normalizeAction(String(normalizedPayload.action ?? "")) ??
+          (executionMode === "AMEND_SLTP" ? "HOLD" : null);
+        if (!normalizedAction) {
+          throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "invalid_action" };
+        }
+
         const brokerData = await this.getBrokerIdsForPayload(normalizedPayload);
         const strategyResult = await this.buildStrategySignalBatch(
           tokenSubscription,
@@ -1036,10 +1110,16 @@ export class AlertSnapshotService {
         );
 
       if (shouldQueueCloseOpposite) {
+        const directionAction =
+          String(normalizedPayload.sourceAction ?? "").toUpperCase() === "SELL"
+            ? "SELL"
+            : String(normalizedPayload.sourceAction ?? "").toUpperCase() === "BUY"
+              ? "BUY"
+              : normalizedAction;
         await this.queueEdgingCloseOppositeTrades(
           userTradingAccounts,
           normalizedPayload,
-          normalizedAction as "BUY" | "SELL",
+          directionAction as "BUY" | "SELL",
           queryRunner,
           assetType,
         );
@@ -1080,13 +1160,13 @@ export class AlertSnapshotService {
     await queryRunner.startTransaction();
 
     try {
-      const normalizedPayload = this.validateAndNormalizeExecutionFields(
-        payload as ICreateAlertSnapshot
+      let normalizedPayload = this.validateAndNormalizeExecutionFields(
+        this.normalizeSimplifiedLuxAlert(payload as ICreateAlertSnapshot)
       );
       this.normalizeIndianInstrument(normalizedPayload as ICreateAlertSnapshot);
-      const executionMode = this.normalizeExecutionMode(normalizedPayload);
-      const assetType = await this.isValidAssetType(normalizedPayload as ICreateAlertSnapshot);
-      const normalizedAction =
+      let executionMode = this.normalizeExecutionMode(normalizedPayload);
+      let assetType = await this.isValidAssetType(normalizedPayload as ICreateAlertSnapshot);
+      let normalizedAction: "BUY" | "SELL" | "HOLD" | null =
         this.normalizeAction(String(normalizedPayload.action ?? "")) ??
         (executionMode === "AMEND_SLTP" ? "HOLD" : null);
       if (!normalizedAction) {
@@ -1162,6 +1242,22 @@ export class AlertSnapshotService {
 
       const shouldExecuteActions =
         tradingStrengthAllowsExecution && !scheduleBlocked;
+      if (shouldExecuteActions) {
+        const optionConfig = this.optionResolver.resolveConfig(strategy.defaultParams);
+        normalizedPayload = await this.optionResolver.resolve(
+          normalizedPayload as ICreateAlertSnapshot,
+          optionConfig,
+        );
+        this.normalizeIndianInstrument(normalizedPayload as ICreateAlertSnapshot);
+        executionMode = this.normalizeExecutionMode(normalizedPayload);
+        assetType = await this.isValidAssetType(normalizedPayload as ICreateAlertSnapshot);
+        normalizedAction =
+          this.normalizeAction(String(normalizedPayload.action ?? "")) ??
+          (executionMode === "AMEND_SLTP" ? "HOLD" : null);
+        if (!normalizedAction) {
+          throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "invalid_action" };
+        }
+      }
       console.log("[ALERT] strategy tradingStrength gate", {
         planId,
         strategyId: Number(strategy.id),
@@ -1181,7 +1277,7 @@ export class AlertSnapshotService {
           planId,
           strategyId: Number(strategy.id),
           source: "plan_webhook",
-          action: normalizedAction,
+          action: normalizedPayload.sourceAction ?? normalizedAction,
           symbol: normalizedPayload.ticker,
           exchange: normalizedPayload.exchange ?? null,
           price: normalizedPayload.close ?? null,
