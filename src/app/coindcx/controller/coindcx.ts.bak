@@ -126,214 +126,6 @@ export class CoinDCXController {
 			data: result,
 		});
 	}
-@ControllerError()
-async placeFuturesOrder(req: Request, res: Response) {
-	const userId = this.requireUserId(req);
-	const tradingAccountId = this.requireTradingAccountId(req);
-	const order = (req.body as any)?.order;
-
-	if (!order || !order.symbol || !order.side || !order.marginAmount || !order.leverage) {
-		return res.status(HttpStatusCode._BAD_REQUEST).json({
-			message: "invalid_futures_order_payload",
-			required: {
-				tradingAccountId: "number",
-				order: {
-					symbol: "BTCUSDT or B-BTC_USDT",
-					side: "BUY or SELL",
-					marginAmount: "number",
-					leverage: "number",
-					orderType: "market_order or limit_order",
-					price: "required only for limit_order",
-					entryPrice: "optional for market_order",
-					marginCurrency: "AUTO or INR or USDT",
-					positionMarginType: "isolated or crossed",
-					stopLossPercent: "optional number",
-					takeProfitPercent: "optional number",
-					stopLossPrice: "optional number",
-					takeProfitPrice: "optional number"
-				}
-			},
-			example: {
-				tradingAccountId: 60,
-				order: {
-					symbol: "BTCUSDT",
-					side: "BUY",
-					orderType: "market_order",
-					marginAmount: 500,
-					leverage: 10,
-					marginCurrency: "INR",
-					positionMarginType: "isolated",
-					stopLossPercent: 0.5,
-					takeProfitPercent: 1
-				}
-			}
-		});
-	}
-
-	const result = await this.service.placeFuturesOrder({
-		userId,
-		tradingAccountId,
-		order
-	});
-
-	return res.status(200).json({
-		message: "futures_order_placed",
-		data: result
-	});
-}
-	@ControllerError()
-	async getFuturesWallets(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
-
-		const data = await this.service.getFuturesWallets(
-			userId,
-			tradingAccountId
-		);
-
-		return res.status(200).json({
-			message: "futures_wallets",
-			data,
-		});
-	}
-
-	@ControllerError()
-	async getFuturesPositions(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
-
-		const page = Number((req.body as any)?.page ?? (req.query as any)?.page ?? 1);
-		const size = Number((req.body as any)?.size ?? (req.query as any)?.size ?? 10);
-
-		const data = await this.service.getFuturesPositions({
-			userId,
-			tradingAccountId,
-			page: Number.isFinite(page) ? page : 1,
-			size: Number.isFinite(size) ? size : 10,
-		});
-
-		return res.status(200).json({
-			message: "futures_positions",
-			data,
-		});
-	}
-
-	@ControllerError()
-	async createFuturesTPSL(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
-		const positionId = String((req.body as any)?.positionId ?? "").trim();
-
-		if (!positionId) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({
-				message: "positionId_required",
-			});
-		}
-
-		const stopLoss = (req.body as any)?.stopLoss;
-		const takeProfit = (req.body as any)?.takeProfit;
-
-		if (!stopLoss && !takeProfit) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({
-				message: "stopLoss_or_takeProfit_required",
-			});
-		}
-
-		const data = await this.service.createFuturesTPSL({
-			userId,
-			tradingAccountId,
-			positionId,
-			stopLoss,
-			takeProfit,
-		});
-
-		return res.status(200).json({
-			message: "futures_tpsl_created",
-			data,
-		});
-	}
-
-	@ControllerError()
-	async exitFuturesPosition(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
-		const positionId = String((req.body as any)?.positionId ?? "").trim();
-
-		if (!positionId) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({
-				message: "positionId_required",
-			});
-		}
-
-		const data = await this.service.exitFuturesPosition({
-			userId,
-			tradingAccountId,
-			positionId,
-		});
-
-		return res.status(200).json({
-			message: "futures_position_exit_requested",
-			data,
-		});
-	}
-
-	@ControllerError()
-	async cancelFuturesOpenOrdersForPosition(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
-		const positionId = String((req.body as any)?.positionId ?? "").trim();
-
-		if (!positionId) {
-			return res.status(HttpStatusCode._BAD_REQUEST).json({
-				message: "positionId_required",
-			});
-		}
-
-		const data = await this.service.cancelFuturesOpenOrdersForPosition({
-			userId,
-			tradingAccountId,
-			positionId,
-		});
-
-		return res.status(200).json({
-			message: "futures_position_open_orders_cancelled",
-			data,
-		});
-	}
-
-@ControllerError()
-async getFuturesInstruments(req: Request, res: Response) {
-	const pair =
-		String((req.query as any)?.pair ?? "").trim() || undefined;
-
-	const marginCurrency =
-		String(
-			(req.query as any)?.marginCurrency ??
-			(req.query as any)?.margin_currency_short_name ??
-			"INR"
-		)
-			.trim()
-			.toUpperCase();
-
-	if (!["INR", "USDT"].includes(marginCurrency)) {
-		return res.status(HttpStatusCode._BAD_REQUEST).json({
-			message: "invalid_margin_currency",
-			allowedValues: ["INR", "USDT"],
-		});
-	}
-
-	const data = await this.service.getFuturesInstruments({
-		pair,
-		marginCurrency,
-	} as any);
-
-	return res.status(200).json({
-		message: pair
-			? "futures_instrument"
-			: "futures_active_instruments",
-		data,
-	});
-}
 
 	@ControllerError()
 	async modifyOrder(req: Request, res: Response) {
@@ -472,29 +264,27 @@ async getFuturesInstruments(req: Request, res: Response) {
 		});
 	}
 
-	@ControllerError()
-	async getBalances(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
+async getBalances(req: Request, res: Response) {
+	const userId = this.requireUserId(req);
+	const tradingAccountId = this.requireTradingAccountId(req);
 
-		const data = await this.service.getBalances(userId, tradingAccountId);
+	const data = await this.service.getBalances(userId, tradingAccountId);
 
-		return res.status(200).json({
-			message: "balances",
-			data,
-		});
-	}
+	return res.status(200).json({
+		message: "balances",
+		data,
+	});
+}
 
-	@ControllerError()
-	async getAccountSummary(req: Request, res: Response) {
-		const userId = this.requireUserId(req);
-		const tradingAccountId = this.requireTradingAccountId(req);
+async getAccountSummary(req: Request, res: Response) {
+	const userId = this.requireUserId(req);
+	const tradingAccountId = this.requireTradingAccountId(req);
 
-		const data = await this.service.getAccountSummary(userId, tradingAccountId);
+	const data = await this.service.getAccountSummary(userId, tradingAccountId);
 
-		return res.status(200).json({
-			message: "account_summary",
-			data,
-		});
-	}
+	return res.status(200).json({
+		message: "account_summary",
+		data,
+	});
+}
 }

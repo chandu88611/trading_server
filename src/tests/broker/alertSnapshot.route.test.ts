@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { requestJson, startInMemoryApp } from "../helpers/inMemoryExpress";
 
 const AppDataSource = require("../../db/data-source").default;
 const { AlertSnapshotService } = require("../../app/broker/brokerAlerts/services/alertSnapshot.service");
@@ -21,39 +22,7 @@ async function startAlertApp() {
   app.use(express.json());
   app.use("/tradingview/alerts", router);
 
-  const server = await new Promise<any>((resolve) => {
-    const instance = app.listen(0, () => resolve(instance));
-  });
-
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind alert snapshot test server");
-  }
-
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    async close() {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error?: Error | null) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
-    },
-  };
-}
-
-async function requestJson(url: string, init?: RequestInit) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-
-  return {
-    status: response.status,
-    body: text ? JSON.parse(text) : null,
-  };
+  return startInMemoryApp(app, "alert-route-test");
 }
 
 test("AlertSnapshotRouter: POST /tradingview/alerts/strategy requires a plan webhook token", async () => {

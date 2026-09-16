@@ -1,0 +1,921 @@
+import axios, { AxiosRequestConfig } from "axios";
+import crypto from "crypto";
+import { CoinDCXDB } from "./coindcx.db";
+import {
+	CoinDCXAuthPayload,
+	CoinDCXBatchRequest,
+	CoinDCXCancelOrderRequest,
+	CoinDCXDeleteTokenResult,
+	CoinDCXModifyOrderRequest,
+	CoinDCXOrderPayload,
+	CoinDCXPlaceOrderRequest,
+	CoinDCXPublicOrderbookRequest,
+	CoinDCXPublicTickerRequest,
+	CoinDCXTokenStatus,
+	CoinDCXVerifyTokenResult,
+} from "../interfaces/coindcx";
+
+type CoinDCXCredentials = {
+	apiKey: string;
+	apiSecret: string;
+	baseUrl: string;
+	connectedAt?: string | null;
+	verifiedAt?: string | null;
+};
+
+type NormalizedCoinDCXMeta = {
+	apiKey?: string;
+	apiSecret?: string;
+	baseUrl?: string;
+	connectedAt?: string | null;
+	verifiedAt?: string | null;
+};
+
+export class CoinDCXService {
+	private readonly db = new CoinDCXDB();
+
+	private readonly defaultBaseUrl =
+		process.env.COINDCX_BASE_URL || "https://api.coindcx.com";
+
+	private readonly requestTimeout = Number(process.env.COINDCX_TIMEOUT_MS || 15000);
+
+	private readonly defaultBatchSize = Number(
+		process.env.COINDCX_EXECUTE_BATCH_SIZE || 25
+	);
+
+	private readonly maxBatchSize = Number(
+		process.env.COINDCX_EXECUTE_MAX_BATCH_SIZE || 100
+	);
+
+	async saveAuthToken(payload: CoinDCXAuthPayload) {
+		const account = await this.db.getTradingAccountById(
+			payload.userId,
+			payload.tradingAccountId
+		);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const baseUrl = this.cleanBaseUrl(payload.baseUrl || this.defaultBaseUrl);
+		const now = new Date().toISOString();
+
+		await this.db.updateAccountMeta(account!, {
+			coindcx: {
+				apiKey: payload.apiKey,
+				apiSecret: payload.apiSecret,
+				baseUrl,
+				connectedAt: now,
+				verifiedAt: null,
+			},
+		});
+
+		return {
+			tradingAccountId: payload.tradingAccountId,
+			broker: this.getBrokerName(account),
+			baseUrl,
+			connectedAt: now,
+			hasApiKey: true,
+			hasApiSecret: true,
+		};
+	}
+
+	async getAuthTokenStatus(
+		userId: number,
+		tradingAccountId: number
+	): Promise<CoinDCXTokenStatus> {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const meta = this.getCoinDCXMeta(account!);
+
+		const hasApiKey = Boolean(meta.apiKey);
+		const hasApiSecret = Boolean(meta.apiSecret);
+
+		return {
+			tradingAccountId,
+			broker: this.getBrokerName(account),
+			hasApiKey,
+			hasApiSecret,
+			baseUrl: meta.baseUrl || this.defaultBaseUrl,
+			connectedAt: meta.connectedAt || null,
+			verifiedAt: meta.verifiedAt || null,
+			isReady: hasApiKey && hasApiSecret,
+		};
+	}
+
+	async verifyAuthToken(
+		userId: number,
+		tradingAccountId: number
+	): Promise<CoinDCXVerifyTokenResult> {
+		const checkedAt = new Date().toISOString();
+
+		try {
+			const account = await this.db.getTradingAccountById(
+				userId,
+				tradingAccountId
+			);
+
+			if (!account) {
+				this.throwError(404, "trading_account_not_found");
+			}
+
+			const credentials = this.requireCredentials(account!);
+
+			await this.privatePost(credentials, "/exchange/v1/users/balances", {
+				timestamp: Date.now(),
+			});
+
+			await this.db.updateAccountMeta(account!, {
+				coindcx: {
+					...this.getCoinDCXMeta(account!),
+					verifiedAt: checkedAt,
+				},
+			});
+
+			return {
+				valid: true,
+				tradingAccountId,
+				broker: this.getBrokerName(account),
+				checkedAt,
+			};
+		} catch (error: any) {
+			return {
+				valid: false,
+				tradingAccountId,
+				broker: null,
+				checkedAt,
+				error: this.getErrorMessage(error),
+			};
+		}
+	}
+
+	async deleteAuthToken(
+		userId: number,
+		tradingAccountId: number
+	): Promise<CoinDCXDeleteTokenResult> {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		await this.db.clearAuthMeta(account!);
+
+		return {
+			deleted: true,
+			tradingAccountId,
+			broker: this.getBrokerName(account),
+		};
+	}
+
+	async placeOrder(request: CoinDCXPlaceOrderRequest) {
+		const account = await this.db.getTradingAccountById(
+			request.userId,
+			request.tradingAccountId
+		);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+		const order = this.normalizeOrder(request.order);
+
+		const body: Record<string, any> = {
+			side: order.side.toLowerCase(),
+			order_type: this.normalizeOrderType(order.orderType),
+			market: this.normalizeMarket(order.symbol),
+			total_quantity: String(order.quantity),
+			timestamp: Date.now(),
+		};
+
+		if (order.price !== undefined && order.price !== null) {
+			body.price_per_unit = String(order.price);
+		}
+
+		if (order.clientOrderId) {
+			body.client_order_id = order.clientOrderId;
+		}
+
+		const result = await this.privatePost(
+			credentials,
+			"/exchange/v1/orders/create",
+			body
+		);
+
+		return result;
+	}
+
+	async modifyOrder(request: CoinDCXModifyOrderRequest) {
+		const account = await this.db.getTradingAccountById(
+			request.userId,
+			request.tradingAccountId
+		);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		const body: Record<string, any> = {
+			id: request.orderId,
+			timestamp: Date.now(),
+		};
+
+		if (request.quantity !== undefined && request.quantity !== null) {
+			const quantity = Number(request.quantity);
+
+			if (!Number.isFinite(quantity) || quantity <= 0) {
+				this.throwError(400, "invalid_quantity");
+			}
+
+			body.total_quantity = String(quantity);
+		}
+
+		if (request.price !== undefined && request.price !== null) {
+			const price = Number(request.price);
+
+			if (!Number.isFinite(price) || price <= 0) {
+				this.throwError(400, "invalid_price");
+			}
+
+			body.price_per_unit = String(price);
+		}
+
+		if (!body.total_quantity && !body.price_per_unit) {
+			this.throwError(400, "quantity_or_price_required");
+		}
+
+		return this.privatePost(credentials, "/exchange/v1/orders/edit", body);
+	}
+
+	async cancelOrder(request: CoinDCXCancelOrderRequest) {
+		const account = await this.db.getTradingAccountById(
+			request.userId,
+			request.tradingAccountId
+		);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		return this.privatePost(credentials, "/exchange/v1/orders/cancel", {
+			id: request.orderId,
+			timestamp: Date.now(),
+		});
+	}
+
+	async getOrders(userId: number, tradingAccountId: number) {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		const activeOrders = await this.privatePost(
+			credentials,
+			"/exchange/v1/orders/active_orders",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		return {
+			activeOrders,
+		};
+	}
+
+	async getPositions(userId: number, tradingAccountId: number) {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		const balances = await this.privatePost(
+			credentials,
+			"/exchange/v1/users/balances",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		return {
+			message: "CoinDCX spot account does not have futures-style positions",
+			balances: this.filterNonZeroBalances(balances),
+		};
+	}
+
+	async getHoldings(userId: number, tradingAccountId: number) {
+		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+		if (!account) {
+			this.throwError(404, "trading_account_not_found");
+		}
+
+		const credentials = this.requireCredentials(account!);
+
+		const balances = await this.privatePost(
+			credentials,
+			"/exchange/v1/users/balances",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		return this.filterNonZeroBalances(balances);
+	}
+
+	async executePendingBatch(request: CoinDCXBatchRequest) {
+		const batchSize = this.normalizeBatchSize(request.batchSize);
+		const jobs = await this.db.claimPendingTrades(batchSize);
+
+		const result = {
+			picked: jobs.length,
+			completed: 0,
+			failed: 0,
+			items: [] as any[],
+		};
+
+		for (const job of jobs as any[]) {
+			try {
+				const tradingAccount = job.tradingAccount;
+
+				if (!tradingAccount?.userId || !tradingAccount?.id) {
+					this.throwError(400, "trade_signal_missing_trading_account");
+				}
+
+				const order = this.buildOrderFromTradeSignal(job);
+
+				const orderResult: any = await this.placeOrder({
+					userId: Number(tradingAccount.userId),
+					tradingAccountId: Number(tradingAccount.id),
+					order,
+				});
+
+				const brokerOrderId = this.extractBrokerOrderId(orderResult);
+
+				await this.db.markJobSuccess(job, brokerOrderId);
+
+				result.completed += 1;
+				result.items.push({
+					id: job.id,
+					status: "completed",
+					brokerOrderId,
+					response: orderResult,
+				});
+			} catch (error: any) {
+				const message = this.getErrorMessage(error);
+
+				await this.db.markJobFailed(job as any, message);
+
+				result.failed += 1;
+				result.items.push({
+					id: (job as any)?.id,
+					status: "failed",
+					error: message,
+				});
+			}
+		}
+
+		return result;
+	}
+
+	async getPublicTicker(request: CoinDCXPublicTickerRequest) {
+		const data = await this.publicGet("/exchange/ticker");
+
+		const market = request.market
+			? this.normalizeMarket(request.market).toUpperCase()
+			: undefined;
+
+		if (!market) {
+			return data;
+		}
+
+		if (Array.isArray(data)) {
+			return data.filter((item: any) => {
+				const itemMarket = String(
+					item?.market ?? item?.symbol ?? item?.pair ?? ""
+				).toUpperCase();
+
+				return itemMarket === market;
+			});
+		}
+
+		return data;
+	}
+
+	async getPublicOrderbook(request: CoinDCXPublicOrderbookRequest) {
+		const market = this.normalizeMarket(request.market);
+
+		return this.publicGet("/exchange/orderbook", {
+			market,
+		});
+	}
+
+	private async publicGet(path: string, query?: Record<string, any>) {
+		const config: AxiosRequestConfig = {
+			method: "GET",
+			url: `${this.defaultBaseUrl}${path}`,
+			params: query,
+			timeout: this.requestTimeout,
+		};
+
+		const response = await axios(config);
+		return response.data;
+	}
+
+	private async privatePost(
+		credentials: CoinDCXCredentials,
+		path: string,
+		body: Record<string, any>
+	) {
+		const finalBody = {
+			...body,
+			timestamp: body.timestamp || Date.now(),
+		};
+
+		const jsonBody = JSON.stringify(finalBody);
+
+		const signature = crypto
+			.createHmac("sha256", credentials.apiSecret)
+			.update(jsonBody)
+			.digest("hex");
+
+		const config: AxiosRequestConfig = {
+			method: "POST",
+			url: `${credentials.baseUrl}${path}`,
+			timeout: this.requestTimeout,
+			headers: {
+				"Content-Type": "application/json",
+				"X-AUTH-APIKEY": credentials.apiKey,
+				"X-AUTH-SIGNATURE": signature,
+			},
+			data: finalBody,
+		};
+
+		try {
+			const response = await axios(config);
+			return response.data;
+		} catch (error: any) {
+			const statusCode = error?.response?.status || 500;
+			const brokerError =
+				error?.response?.data?.message ||
+				error?.response?.data?.error ||
+				error?.response?.data ||
+				error?.message ||
+				"coindcx_request_failed";
+
+			this.throwError(
+				statusCode,
+				typeof brokerError === "string"
+					? brokerError
+					: JSON.stringify(brokerError)
+			);
+		}
+	}
+
+	private requireCredentials(account: any): CoinDCXCredentials {
+		const meta = this.getCoinDCXMeta(account);
+
+		if (!meta.apiKey || !meta.apiSecret) {
+			this.throwError(400, "coindcx_credentials_not_configured");
+		}
+
+		return {
+			apiKey: String(meta.apiKey),
+			apiSecret: String(meta.apiSecret),
+			baseUrl: this.cleanBaseUrl(meta.baseUrl || this.defaultBaseUrl),
+			connectedAt: meta.connectedAt || null,
+			verifiedAt: meta.verifiedAt || null,
+		};
+	}
+
+	private getCoinDCXMeta(account: any): NormalizedCoinDCXMeta {
+		const accountMeta = account?.accountMeta ?? {};
+
+		const coindcx =
+			accountMeta.coindcx ??
+			accountMeta.coinDCX ??
+			accountMeta.coinDcx ??
+			{};
+
+		return {
+			apiKey:
+				coindcx.apiKey ??
+				accountMeta.coindcxApiKey ??
+				accountMeta.apiKey ??
+				undefined,
+			apiSecret:
+				coindcx.apiSecret ??
+				accountMeta.coindcxApiSecret ??
+				accountMeta.apiSecret ??
+				undefined,
+			baseUrl:
+				coindcx.baseUrl ??
+				accountMeta.coindcxBaseUrl ??
+				accountMeta.baseUrl ??
+				this.defaultBaseUrl,
+			connectedAt: coindcx.connectedAt ?? null,
+			verifiedAt: coindcx.verifiedAt ?? null,
+		};
+	}
+
+	private normalizeOrder(order: CoinDCXOrderPayload): CoinDCXOrderPayload {
+		if (!order) {
+			this.throwError(400, "order_required");
+		}
+
+		const symbol = String(order.symbol ?? "").trim();
+		const side = String(order.side ?? "").trim().toUpperCase();
+		const quantity = Number(order.quantity);
+
+		if (!symbol) {
+			this.throwError(400, "symbol_required");
+		}
+
+		if (!["BUY", "SELL"].includes(side)) {
+			this.throwError(400, "invalid_order_side");
+		}
+
+		if (!Number.isFinite(quantity) || quantity <= 0) {
+			this.throwError(400, "invalid_quantity");
+		}
+
+		if (order.price !== undefined && order.price !== null) {
+			const price = Number(order.price);
+
+			if (!Number.isFinite(price) || price <= 0) {
+				this.throwError(400, "invalid_price");
+			}
+		}
+
+		return {
+			...order,
+			symbol,
+			side: side as "BUY" | "SELL",
+			quantity,
+			price:
+				order.price !== undefined && order.price !== null
+					? Number(order.price)
+					: undefined,
+			orderType: order.orderType || "market_order",
+		};
+	}
+
+	private normalizeOrderType(orderType?: string) {
+		const value = String(orderType || "market_order")
+			.trim()
+			.toLowerCase();
+
+		if (
+			value === "market" ||
+			value === "market_order" ||
+			value === "marketorder"
+		) {
+			return "market_order";
+		}
+
+		if (value === "limit" || value === "limit_order" || value === "limitorder") {
+			return "limit_order";
+		}
+
+		return value;
+	}
+
+	private normalizeMarket(symbol: string) {
+		const value = String(symbol || "")
+			.trim()
+			.toUpperCase()
+			.replace("/", "")
+			.replace("-", "")
+			.replace("_", "");
+
+		if (!value) {
+			this.throwError(400, "market_required");
+		}
+
+		return value;
+	}
+
+	private normalizeBatchSize(batchSize?: number) {
+		const value = Number(batchSize);
+
+		if (!Number.isFinite(value) || value <= 0) {
+			return this.defaultBatchSize;
+		}
+
+		return Math.min(Math.floor(value), this.maxBatchSize);
+	}
+
+	private buildOrderFromTradeSignal(job: any): CoinDCXOrderPayload {
+		const payload =
+			job?.payload ??
+			job?.signalPayload ??
+			job?.order ??
+			job?.metadata ??
+			job?.meta ??
+			{};
+
+		const symbol =
+			job?.symbol ??
+			payload?.symbol ??
+			payload?.market ??
+			payload?.pair ??
+			payload?.ticker;
+
+		const rawSide =
+			job?.side ??
+			payload?.side ??
+			payload?.action ??
+			payload?.signal ??
+			payload?.transactionType;
+
+		const quantity =
+			job?.quantity ??
+			payload?.quantity ??
+			payload?.qty ??
+			payload?.total_quantity ??
+			payload?.totalQuantity;
+
+		const price =
+			job?.price ??
+			payload?.price ??
+			payload?.price_per_unit ??
+			payload?.pricePerUnit;
+
+		const orderType =
+			job?.orderType ??
+			payload?.orderType ??
+			payload?.order_type ??
+			payload?.type ??
+			"market_order";
+
+		const side = this.normalizeSignalSide(rawSide);
+
+		return this.normalizeOrder({
+			symbol,
+			side,
+			quantity: Number(quantity),
+			price:
+				price !== undefined && price !== null && price !== ""
+					? Number(price)
+					: undefined,
+			orderType,
+			clientOrderId: job?.id ? `trade_signal_${job.id}` : undefined,
+		});
+	}
+
+	private normalizeSignalSide(side: any): "BUY" | "SELL" {
+		const value = String(side || "")
+			.trim()
+			.toUpperCase();
+
+		if (["BUY", "LONG", "ENTRY", "B"].includes(value)) {
+			return "BUY";
+		}
+
+		if (["SELL", "SHORT", "EXIT", "S"].includes(value)) {
+			return "SELL";
+		}
+
+		this.throwError(400, "invalid_signal_side");
+	}
+
+	private extractBrokerOrderId(response: any): string | null {
+		return (
+			response?.id ??
+			response?.order_id ??
+			response?.client_order_id ??
+			response?.orders?.[0]?.id ??
+			response?.data?.id ??
+			response?.data?.order_id ??
+			null
+		);
+	}
+
+	private filterNonZeroBalances(data: any) {
+		if (!Array.isArray(data)) {
+			return data;
+		}
+
+		return data.filter((item: any) => {
+			const balance = Number(
+				item?.balance ??
+					item?.available_balance ??
+					item?.locked_balance ??
+					item?.quantity ??
+					0
+			);
+
+			const available = Number(item?.available_balance ?? 0);
+			const locked = Number(item?.locked_balance ?? 0);
+
+			return balance > 0 || available > 0 || locked > 0;
+		});
+	}
+
+	private cleanBaseUrl(baseUrl: string) {
+		return String(baseUrl || this.defaultBaseUrl).replace(/\/+$/, "");
+	}
+
+	private getBrokerName(account: any) {
+		return account?.broker?.code || account?.broker?.name || null;
+	}
+
+	private getErrorMessage(error: any) {
+		if (!error) return "unknown_error";
+
+		return (
+			error?.message ||
+			error?.response?.data?.message ||
+			error?.response?.data?.error ||
+			(typeof error?.response?.data === "string"
+				? error.response.data
+				: undefined) ||
+			"unknown_error"
+		);
+	}
+
+	private throwError(statusCode: number, message: string): never {
+		throw {
+			statusCode,
+			message,
+		};
+	}
+
+
+async getBalances(userId: number, tradingAccountId: number) {
+	const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+	if (!account) {
+		this.throwError(404, "trading_account_not_found");
+	}
+
+	const credentials = this.requireCredentials(account);
+
+	return this.privatePost(credentials, "/exchange/v1/users/balances", {
+		timestamp: Date.now(),
+	});
+}
+
+async getAccountSummary(userId: number, tradingAccountId: number) {
+	const profile = await this.db.getTradingAccountProfile(
+		userId,
+		tradingAccountId
+	);
+
+	if (!profile) {
+		this.throwError(404, "trading_account_not_found");
+	}
+
+	const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+
+	if (!account) {
+		this.throwError(404, "trading_account_not_found");
+	}
+
+	const credentials = this.requireCredentials(account);
+
+	const rawBalances = await this.privatePost(
+		credentials,
+		"/exchange/v1/users/balances",
+		{
+			timestamp: Date.now(),
+		}
+	);
+
+	const balances = this.normalizeBalances(rawBalances);
+	const holdings = balances.filter((item) => item.totalBalance > 0);
+
+	let activeOrders: any[] = [];
+	let ordersError: string | null = null;
+
+	try {
+		const ordersResponse = await this.privatePost(
+			credentials,
+			"/exchange/v1/orders/active_orders",
+			{
+				timestamp: Date.now(),
+			}
+		);
+
+		activeOrders = Array.isArray(ordersResponse)
+			? ordersResponse
+			: Array.isArray(ordersResponse?.orders)
+				? ordersResponse.orders
+				: [];
+	} catch (error: any) {
+		ordersError = this.getErrorMessage(error);
+		activeOrders = [];
+	}
+
+	const accountMeta = profile.account_meta ?? {};
+	const coindcxMeta =
+		accountMeta.coindcx ??
+		accountMeta.coinDCX ??
+		accountMeta.coinDcx ??
+		{};
+
+	const totalAvailableBalance = balances.reduce(
+		(sum, item) => sum + item.balance,
+		0
+	);
+
+	const totalLockedBalance = balances.reduce(
+		(sum, item) => sum + item.lockedBalance,
+		0
+	);
+
+	return {
+		user: {
+			id: Number(profile.user_id ?? userId),
+			name: profile.user_name ?? null,
+			email: profile.user_email ?? null,
+		},
+		tradingAccount: {
+			id: Number(profile.id ?? tradingAccountId),
+			broker: profile.broker_code ?? "COINDCX",
+			brokerName: profile.broker_name ?? "CoinDCX",
+			marketCategory: profile.market_category ?? "CRYPTO",
+			accountId: profile.account_id ?? null,
+			accountLabel: profile.account_label ?? null,
+			status: profile.status ?? null,
+			isEnabled: profile.is_enabled ?? null,
+			isMaster: profile.is_master ?? null,
+			executionFlow: profile.execution_flow ?? null,
+			lastVerifiedAt: profile.last_verified_at ?? null,
+			createdAt: profile.created_at ?? null,
+			updatedAt: profile.updated_at ?? null,
+			coindcxClientId: coindcxMeta.clientId ?? null,
+			coindcxAccountId: coindcxMeta.accountId ?? null,
+			connectedAt: coindcxMeta.connectedAt ?? null,
+			verifiedAt: coindcxMeta.verifiedAt ?? null,
+		},
+		balances,
+		holdings,
+		orders: {
+			activeOrders,
+			activeOrdersCount: activeOrders.length,
+			error: ordersError,
+		},
+		summary: {
+			totalAssets: balances.length,
+			nonZeroAssets: holdings.length,
+			hasFunds: holdings.length > 0,
+			totalAvailableBalance,
+			totalLockedBalance,
+		},
+		pnl: {
+			available: false,
+			realized: null,
+			unrealized: null,
+			total: null,
+			reason: "CoinDCX spot P&L requires trade history and average buy price calculation",
+		},
+	};
+}
+
+
+private normalizeBalances(data: any) {
+	if (!Array.isArray(data)) {
+		return [];
+	}
+
+	return data.map((item: any) => {
+		const balance = Number(
+			item?.balance ??
+				item?.available_balance ??
+				item?.availableBalance ??
+				0
+		);
+
+		const lockedBalance = Number(
+			item?.locked_balance ??
+				item?.lockedBalance ??
+				0
+		);
+
+		return {
+			currency: String(item?.currency ?? item?.coin ?? "").toUpperCase(),
+			balance: Number.isFinite(balance) ? balance : 0,
+			lockedBalance: Number.isFinite(lockedBalance) ? lockedBalance : 0,
+			totalBalance:
+				(Number.isFinite(balance) ? balance : 0) +
+				(Number.isFinite(lockedBalance) ? lockedBalance : 0),
+			raw: item,
+		};
+	});
+}
+}

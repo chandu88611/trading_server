@@ -5,12 +5,13 @@ The Indian option resolver enriches simple Lux Algo direction alerts before
 
 ## Strategy Configuration
 
-Enable the resolver in `strategies.default_params`:
+The resolver default is disabled. An admin must explicitly enable it in
+`strategies.default_params` for each strategy:
 
 ```json
 {
   "optionResolver": {
-    "enabled": true,
+    "enabled": false,
     "instrumentType": "OPTIONS",
     "expiryMode": "NEAREST",
     "strikeMode": "ATM",

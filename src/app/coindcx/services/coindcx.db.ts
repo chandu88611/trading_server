@@ -22,6 +22,40 @@ export class CoinDCXDB {
 		});
 	}
 
+	async getTradingAccountProfile(userId: number, tradingAccountId: number) {
+		const rows = await this.accountRepo.query(
+			`
+			SELECT 
+				ta.id,
+				ta.user_id,
+				u.name AS user_name,
+				u.email AS user_email,
+				ta.account_id,
+				ta.account_label,
+				ta.status,
+				ta.is_enabled,
+				ta.is_master,
+				ta.execution_flow,
+				ta.last_verified_at,
+				ta.created_at,
+				ta.updated_at,
+				ta.account_meta,
+				b.code AS broker_code,
+				b.name AS broker_name,
+				b.market_category
+			FROM user_trading_accounts ta
+			JOIN users u ON u.id = ta.user_id
+			JOIN brokers b ON b.id = ta.broker_id
+			WHERE ta.id = $1
+			  AND ta.user_id = $2
+			LIMIT 1
+			`,
+			[tradingAccountId, userId]
+		);
+
+		return rows?.[0] ?? null;
+	}
+
 	async updateAccountMeta(
 		account: UserTradingAccount,
 		metaPatch: Record<string, any>
@@ -101,28 +135,30 @@ export class CoinDCXDB {
 	async markJobFailed(job: TradeSignal, error: string) {
 		if (!job?.status?.id) return;
 
-		await this.tradeSignalRepo.manager.query(
-			`
-			UPDATE trade_signals_status
-			SET status = 'failed',
-				attempts = COALESCE(attempts, 0) + 1,
-				error = $2,
-				updated_at = NOW()
-			WHERE id = $1
-			`,
-			[job.status.id, error]
-		).catch(async () => {
-			await this.tradeSignalRepo.manager.query(
+		await this.tradeSignalRepo.manager
+			.query(
 				`
 				UPDATE trade_signals_status
 				SET status = 'failed',
 					attempts = COALESCE(attempts, 0) + 1,
+					error = $2,
 					updated_at = NOW()
 				WHERE id = $1
 				`,
-				[job.status.id]
-			);
-		});
+				[job.status.id, error]
+			)
+			.catch(async () => {
+				await this.tradeSignalRepo.manager.query(
+					`
+					UPDATE trade_signals_status
+					SET status = 'failed',
+						attempts = COALESCE(attempts, 0) + 1,
+						updated_at = NOW()
+					WHERE id = $1
+					`,
+					[job.status.id]
+				);
+			});
 	}
 
 	async claimPendingTrades(limit: number) {

@@ -45,10 +45,30 @@ class AlertSnapshotService {
         const safeClose = Number.isFinite(close) ? close : 0;
         const ticker = String(payload.ticker ?? "").trim().toUpperCase();
         const action = String(payload.action ?? "").trim().toUpperCase();
+        const rawMarket = String(payload.market ?? "").trim().toUpperCase();
+        const rawExchange = String(payload.exchange ?? "").trim().toUpperCase();
+        const inferredMarket = rawMarket === trade_identify_1.MarketType.CRYPTO ||
+            rawMarket === "CRYPTO" ||
+            rawMarket === "CRYPTOCURRENCY"
+            ? trade_identify_1.MarketType.CRYPTO
+            : rawMarket === trade_identify_1.MarketType.FOREX ||
+                rawMarket === "FOREX" ||
+                rawMarket === "FX"
+                ? trade_identify_1.MarketType.FOREX
+                : rawMarket === trade_identify_1.MarketType.INDIAN ||
+                    rawMarket === "INDIAN" ||
+                    rawMarket === "INDIA"
+                    ? trade_identify_1.MarketType.INDIAN
+                    : this.inferMarketFromTickerAndExchange(ticker, rawExchange);
+        const defaultExchange = inferredMarket === trade_identify_1.MarketType.CRYPTO
+            ? "CRYPTO"
+            : inferredMarket === trade_identify_1.MarketType.FOREX
+                ? "FOREX"
+                : "NSE";
         return {
             ...payload,
-            market: (payload.market ?? trade_identify_1.MarketType.INDIAN),
-            exchange: payload.exchange ?? "NSE",
+            market: (payload.market ?? inferredMarket),
+            exchange: payload.exchange ?? defaultExchange,
             interval: payload.interval ?? "signal",
             barTime: payload.barTime ? new Date(payload.barTime) : now,
             alertTime: payload.alertTime ? new Date(payload.alertTime) : now,
@@ -63,6 +83,36 @@ class AlertSnapshotService {
                 `lux-${ticker || "unknown"}-${action || "signal"}-${now.getTime()}`.slice(0, 100),
             orderType: payload.orderType ?? "MARKET",
         };
+    }
+    inferMarketFromTickerAndExchange(ticker, exchange) {
+        const normalizedTicker = String(ticker ?? "").trim().toUpperCase();
+        const normalizedExchange = String(exchange ?? "").trim().toUpperCase();
+        const cryptoExchanges = new Set([
+            "CRYPTO",
+            "COINDCX",
+            "DELTA",
+            "DELTA_EXCHANGE",
+            "BINANCE",
+            "BYBIT",
+            "OKX",
+        ]);
+        if (cryptoExchanges.has(normalizedExchange)) {
+            return trade_identify_1.MarketType.CRYPTO;
+        }
+        if (normalizedTicker.endsWith("USDT") ||
+            normalizedTicker.endsWith("USDC") ||
+            normalizedTicker.endsWith("BTC") ||
+            normalizedTicker.endsWith("ETH") ||
+            normalizedTicker.includes("BTC") ||
+            normalizedTicker.includes("ETH")) {
+            return trade_identify_1.MarketType.CRYPTO;
+        }
+        if (normalizedExchange === "FOREX" ||
+            normalizedExchange === "FX" ||
+            /^[A-Z]{6}$/.test(normalizedTicker)) {
+            return trade_identify_1.MarketType.FOREX;
+        }
+        return trade_identify_1.MarketType.INDIAN;
     }
     normalizeAction(action) {
         const normalized = String(action ?? "").trim().toUpperCase();
@@ -442,11 +492,32 @@ class AlertSnapshotService {
         const executionMode = this.normalizeExecutionMode(payload);
         if (!executionMode)
             return null;
-        if (executionMode === "AMEND_SLTP")
-            return ["CT"];
-        if (payload.market === trade_identify_1.MarketType.INDIAN)
+        if (payload.market === trade_identify_1.MarketType.CRYPTO) {
+            if (executionMode === "AMEND_SLTP") {
+                // CoinDCX spot does not have proper position-style SL/TP amend flow.
+                // Keep amend flow away from CoinDCX unless we explicitly implement it.
+                return ["DELTA"];
+            }
+            // Crypto strategy OPEN signals should fan out to crypto brokers.
+            // CoinDCX worker will pick COINDCX pending signals.
+            // Delta worker will pick DELTA pending signals.
+            return ["COINDCX", "DELTA"];
+        }
+        if (payload.market === trade_identify_1.MarketType.FOREX) {
+            if (executionMode === "AMEND_SLTP")
+                return ["CT"];
+            return ["CT", "MT5"];
+        }
+        if (payload.market === trade_identify_1.MarketType.INDIAN) {
+            if (executionMode === "AMEND_SLTP") {
+                throw {
+                    statusCode: constants_1.HttpStatusCode._BAD_REQUEST,
+                    message: "indian_amend_sltp_not_supported",
+                };
+            }
             return ["ZEBU"];
-        return ["CT", "MT5"];
+        }
+        return null;
     }
     async queueEdgingCloseOppositeTrades(userTradingAccounts, payload, normalizedAction, queryRunner, assetType) {
         const uniqueUserIds = Array.from(new Set(userTradingAccounts.map((account) => Number(account.userId)).filter(Boolean)));

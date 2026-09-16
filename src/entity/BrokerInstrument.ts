@@ -20,6 +20,13 @@ import {
   "expiry",
   "isActive",
 ])
+@Index("idx_broker_instruments_type_expiry_strike", [
+  "brokerCode",
+  "exchange",
+  "instrumentType",
+  "expiry",
+  "strike",
+])
 export class BrokerInstrument {
   @PrimaryGeneratedColumn({ type: "bigint" })
   id!: number;

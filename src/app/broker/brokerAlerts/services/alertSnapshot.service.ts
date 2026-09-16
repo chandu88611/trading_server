@@ -56,37 +56,104 @@ export class AlertSnapshotService {
     this.optionResolver = new IndianOptionResolverService();
   }
 
-  private normalizeSimplifiedLuxAlert<T extends Partial<ICreateAlertSnapshot>>(payload: T): T {
-    const strategy = String((payload as any).strategy ?? "").trim().toUpperCase();
-    const isSimpleLux = strategy.includes("LUX") || (payload as any).lots !== undefined;
-    if (!isSimpleLux) return payload;
+private normalizeSimplifiedLuxAlert<T extends Partial<ICreateAlertSnapshot>>(payload: T): T {
+  const strategy = String((payload as any).strategy ?? "").trim().toUpperCase();
+  const isSimpleLux = strategy.includes("LUX") || (payload as any).lots !== undefined;
 
-    const now = new Date();
-    const close = Number((payload as any).close);
-    const safeClose = Number.isFinite(close) ? close : 0;
-    const ticker = String((payload as any).ticker ?? "").trim().toUpperCase();
-    const action = String((payload as any).action ?? "").trim().toUpperCase();
-    return {
-      ...payload,
-      market: (payload.market ?? MarketType.INDIAN) as any,
-      exchange: payload.exchange ?? "NSE",
-      interval: payload.interval ?? "signal",
-      barTime: payload.barTime ? new Date(payload.barTime) : now,
-      alertTime: payload.alertTime ? new Date(payload.alertTime) : now,
-      open: payload.open ?? safeClose,
-      close: safeClose,
-      high: payload.high ?? safeClose,
-      low: payload.low ?? safeClose,
-      volume: payload.volume ?? Number((payload as any).lots ?? 0),
-      tradingStrength: payload.tradingStrength ?? 100,
-      executionMode: payload.executionMode ?? "OPEN",
-      entryRef:
-        payload.entryRef ??
-        `lux-${ticker || "unknown"}-${action || "signal"}-${now.getTime()}`.slice(0, 100),
-      orderType: payload.orderType ?? "MARKET",
-    } as T;
+  if (!isSimpleLux) return payload;
+
+  const now = new Date();
+  const close = Number((payload as any).close);
+  const safeClose = Number.isFinite(close) ? close : 0;
+
+  const ticker = String((payload as any).ticker ?? "").trim().toUpperCase();
+  const action = String((payload as any).action ?? "").trim().toUpperCase();
+
+  const rawMarket = String((payload as any).market ?? "").trim().toUpperCase();
+  const rawExchange = String((payload as any).exchange ?? "").trim().toUpperCase();
+
+  const inferredMarket =
+    rawMarket === MarketType.CRYPTO ||
+    rawMarket === "CRYPTO" ||
+    rawMarket === "CRYPTOCURRENCY"
+      ? MarketType.CRYPTO
+      : rawMarket === MarketType.FOREX ||
+          rawMarket === "FOREX" ||
+          rawMarket === "FX"
+        ? MarketType.FOREX
+        : rawMarket === MarketType.INDIAN ||
+            rawMarket === "INDIAN" ||
+            rawMarket === "INDIA"
+          ? MarketType.INDIAN
+          : this.inferMarketFromTickerAndExchange(ticker, rawExchange);
+
+  const defaultExchange =
+    inferredMarket === MarketType.CRYPTO
+      ? "CRYPTO"
+      : inferredMarket === MarketType.FOREX
+        ? "FOREX"
+        : "NSE";
+
+  return {
+    ...payload,
+    market: (payload.market ?? inferredMarket) as any,
+    exchange: payload.exchange ?? defaultExchange,
+    interval: payload.interval ?? "signal",
+    barTime: payload.barTime ? new Date(payload.barTime) : now,
+    alertTime: payload.alertTime ? new Date(payload.alertTime) : now,
+    open: payload.open ?? safeClose,
+    close: safeClose,
+    high: payload.high ?? safeClose,
+    low: payload.low ?? safeClose,
+    volume: payload.volume ?? Number((payload as any).lots ?? 0),
+    tradingStrength: payload.tradingStrength ?? 100,
+    executionMode: payload.executionMode ?? "OPEN",
+    entryRef:
+      payload.entryRef ??
+      `lux-${ticker || "unknown"}-${action || "signal"}-${now.getTime()}`.slice(0, 100),
+    orderType: payload.orderType ?? "MARKET",
+  } as T;
+}
+
+private inferMarketFromTickerAndExchange(ticker: string, exchange: string): MarketType {
+  const normalizedTicker = String(ticker ?? "").trim().toUpperCase();
+  const normalizedExchange = String(exchange ?? "").trim().toUpperCase();
+
+  const cryptoExchanges = new Set([
+    "CRYPTO",
+    "COINDCX",
+    "DELTA",
+    "DELTA_EXCHANGE",
+    "BINANCE",
+    "BYBIT",
+    "OKX",
+  ]);
+
+  if (cryptoExchanges.has(normalizedExchange)) {
+    return MarketType.CRYPTO;
   }
 
+  if (
+    normalizedTicker.endsWith("USDT") ||
+    normalizedTicker.endsWith("USDC") ||
+    normalizedTicker.endsWith("BTC") ||
+    normalizedTicker.endsWith("ETH") ||
+    normalizedTicker.includes("BTC") ||
+    normalizedTicker.includes("ETH")
+  ) {
+    return MarketType.CRYPTO;
+  }
+
+  if (
+    normalizedExchange === "FOREX" ||
+    normalizedExchange === "FX" ||
+    /^[A-Z]{6}$/.test(normalizedTicker)
+  ) {
+    return MarketType.FOREX;
+  }
+
+  return MarketType.INDIAN;
+}
   private normalizeAction(action: string): "BUY" | "SELL" | null {
     const normalized = String(action ?? "").trim().toUpperCase();
     if (normalized === "BUY") return "BUY";
@@ -583,13 +650,42 @@ export class AlertSnapshotService {
     };
   }
 
-  private getExecutionBrokerCodes(payload: Partial<ICreateAlertSnapshot>) {
-    const executionMode = this.normalizeExecutionMode(payload);
-    if (!executionMode) return null;
+private getExecutionBrokerCodes(payload: Partial<ICreateAlertSnapshot>) {
+  const executionMode = this.normalizeExecutionMode(payload);
+
+  if (!executionMode) return null;
+
+  if (payload.market === MarketType.CRYPTO) {
+    if (executionMode === "AMEND_SLTP") {
+      // CoinDCX spot does not have proper position-style SL/TP amend flow.
+      // Keep amend flow away from CoinDCX unless we explicitly implement it.
+      return ["DELTA"];
+    }
+
+    // Crypto strategy OPEN signals should fan out to crypto brokers.
+    // CoinDCX worker will pick COINDCX pending signals.
+    // Delta worker will pick DELTA pending signals.
+    return ["COINDCX", "DELTA"];
+  }
+
+  if (payload.market === MarketType.FOREX) {
     if (executionMode === "AMEND_SLTP") return ["CT"];
-    if (payload.market === MarketType.INDIAN) return ["ZEBU"];
     return ["CT", "MT5"];
   }
+
+  if (payload.market === MarketType.INDIAN) {
+    if (executionMode === "AMEND_SLTP") {
+      throw {
+        statusCode: HttpStatusCode._BAD_REQUEST,
+        message: "indian_amend_sltp_not_supported",
+      };
+    }
+
+    return ["ZEBU"];
+  }
+
+  return null;
+}
 
   private async queueEdgingCloseOppositeTrades(
     userTradingAccounts: { userId: number; id: number }[],

@@ -216,6 +216,10 @@ export class BrokerInstrumentService {
       );
     `);
     await AppDataSource.query(`
+      CREATE INDEX IF NOT EXISTS idx_broker_instruments_type_expiry_strike
+      ON broker_instruments(broker_code, exchange, instrument_type, expiry, strike);
+    `);
+    await AppDataSource.query(`
       CREATE INDEX IF NOT EXISTS idx_broker_instruments_last_seen_at
       ON broker_instruments(last_seen_at DESC);
     `);

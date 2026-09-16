@@ -148,12 +148,13 @@ export class IndianOptionResolverService {
       .toUpperCase();
     const exchange = this.derivativeExchange(payload.exchange);
     const optionType: IndianOptionType = sourceAction === "BUY" ? "CE" : "PE";
-    const contracts = await this.instruments.findOptionContracts({
+    const minExpiry = istDateAfter(config.minDaysToExpiry);
+    const contracts = (await this.instruments.findOptionContracts({
       exchange,
       underlying,
       optionType,
-      minExpiry: istDateAfter(config.minDaysToExpiry),
-    });
+      minExpiry,
+    })).filter((contract) => contract.expiry && contract.expiry >= minExpiry);
     if (!contracts.length) {
       throw {
         statusCode: HttpStatusCode._UNPROCESSABLE_ENTITY,

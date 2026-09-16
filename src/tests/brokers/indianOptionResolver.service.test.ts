@@ -238,6 +238,26 @@ test("Indian option resolver chooses the final expiry of the nearest month in MO
   assert.equal(resolved.expiry, "2027-06-24");
 });
 
+test("Indian option resolver rejects same-day or expired contracts even if returned by storage", async () => {
+  let quoted = false;
+  const resolver = new IndianOptionResolverService(
+    { findOptionContracts: async () => [contract(35, 100, "CE", "2000-01-01")] } as any,
+    {
+      getUnderlyingLtp: async () => 100,
+      getQuote: async () => {
+        quoted = true;
+        return quote("token-35");
+      },
+    } as any,
+  );
+
+  await assert.rejects(
+    () => resolver.resolve(payload("BUY", 100), config),
+    (error: any) => error?.statusCode === 422 && error?.message === "option_contracts_not_found",
+  );
+  assert.equal(quoted, false);
+});
+
 test("Indian option resolver rejects contracts with excessive spread", async () => {
   const resolver = new IndianOptionResolverService(
     { findOptionContracts: async () => [contract(40, 100, "CE")] } as any,

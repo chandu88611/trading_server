@@ -753,6 +753,28 @@ class ZebuService {
             signal.trailingStopLossDistance,
         ].some((value) => value !== undefined && value !== null);
     }
+    queueTradeNotification(signal, params) {
+        const lookup = this.db?.getUserEmailForSignal;
+        if (typeof lookup !== "function")
+            return;
+        Promise.resolve()
+            .then(() => lookup.call(this.db, signal.id))
+            .then((user) => {
+            if (!user?.email)
+                return;
+            return (0, email_service_1.sendTradeNotificationEmail)({
+                ...params,
+                userEmail: user.email,
+                userName: user.name ?? null,
+            });
+        })
+            .catch((error) => {
+            console.warn("[ZEBU] trade notification skipped", {
+                tradeSignalId: signal.id,
+                error: error?.message ?? String(error),
+            });
+        });
+    }
     extractRowOrderId(row) {
         return this.pickFirstString(row?.norenordno, row?.orderNo, row?.order_id, row?.orderId) ?? null;
     }
@@ -1326,17 +1348,15 @@ class ZebuService {
                 const cfg = this.getZebuConfigFromAccount(t.tradingAccount);
                 const result = await this.executeCloseSignal(cfg, t);
                 updates.push({ id: t.id, status: "closed", brokerOrderId: result.brokerOrderId ?? undefined });
-                this.db.getUserEmailForSignal(t.id).then((u) => {
-                    if (!u)
-                        return;
-                    (0, email_service_1.sendTradeNotificationEmail)({
-                        userEmail: u.email, userName: u.name, event: "closed",
-                        symbol: t.symbol, exchange: String(t.exchange ?? ""),
-                        side: String(t.action), quantity: Number(t.volume),
-                        broker: String(t.tradingAccount?.broker?.code ?? "ZEBU"),
-                        tradeSignalId: t.id,
-                    }).catch(() => { });
-                }).catch(() => { });
+                this.queueTradeNotification(t, {
+                    event: "closed",
+                    symbol: t.symbol,
+                    exchange: String(t.exchange ?? ""),
+                    side: String(t.action),
+                    quantity: Number(t.volume),
+                    broker: String(t.tradingAccount?.broker?.code ?? "ZEBU"),
+                    tradeSignalId: t.id,
+                });
             }
             catch (error) {
                 updates.push({ id: t.id, status: "failed", error: error?.message ?? String(error) });
@@ -1396,19 +1416,17 @@ class ZebuService {
                 else {
                     updates.push({ id: t.id, status: "executed", brokerOrderId });
                 }
-                this.db.getUserEmailForSignal(t.id).then((u) => {
-                    if (!u)
-                        return;
-                    (0, email_service_1.sendTradeNotificationEmail)({
-                        userEmail: u.email, userName: u.name, event: "executed",
-                        symbol: t.symbol, exchange: String(t.exchange ?? ""),
-                        side: String(t.action), quantity: Number(t.volume),
-                        price: Number(order.price ?? 0) || null,
-                        brokerOrderId: String(brokerOrderId),
-                        broker: String(t.tradingAccount?.broker?.code ?? "ZEBU"),
-                        tradeSignalId: t.id,
-                    }).catch(() => { });
-                }).catch(() => { });
+                this.queueTradeNotification(t, {
+                    event: "executed",
+                    symbol: t.symbol,
+                    exchange: String(t.exchange ?? ""),
+                    side: String(t.action),
+                    quantity: Number(t.volume),
+                    price: Number(order.price ?? 0) || null,
+                    brokerOrderId: String(brokerOrderId),
+                    broker: String(t.tradingAccount?.broker?.code ?? "ZEBU"),
+                    tradeSignalId: t.id,
+                });
             }
             catch (e) {
                 console.error("[ZEBU] EXEC FAILED", {
@@ -1417,18 +1435,16 @@ class ZebuService {
                     payload: e?.data,
                 });
                 updates.push({ id: t.id, status: "failed", error: e?.message ?? String(e) });
-                this.db.getUserEmailForSignal(t.id).then((u) => {
-                    if (!u)
-                        return;
-                    (0, email_service_1.sendTradeNotificationEmail)({
-                        userEmail: u.email, userName: u.name, event: "failed",
-                        symbol: t.symbol, exchange: String(t.exchange ?? ""),
-                        side: String(t.action), quantity: Number(t.volume),
-                        errorMessage: e?.message ?? String(e),
-                        broker: String(t.tradingAccount?.broker?.code ?? "ZEBU"),
-                        tradeSignalId: t.id,
-                    }).catch(() => { });
-                }).catch(() => { });
+                this.queueTradeNotification(t, {
+                    event: "failed",
+                    symbol: t.symbol,
+                    exchange: String(t.exchange ?? ""),
+                    side: String(t.action),
+                    quantity: Number(t.volume),
+                    errorMessage: e?.message ?? String(e),
+                    broker: String(t.tradingAccount?.broker?.code ?? "ZEBU"),
+                    tradeSignalId: t.id,
+                });
             }
         }
         await this.db.updateTradeStatus(updates);

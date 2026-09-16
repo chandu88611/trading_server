@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { sendTradeNotificationEmail } from "../../../types/email.service";
+import { sendTradeNotificationEmail, TradeNotificationParams } from "../../../types/email.service";
 import AppDataSource from "../../../db/data-source";
 import { ZebuDB } from "./zebu.db";
 import { HttpStatusCode } from "../../../types/constants";
@@ -961,6 +961,31 @@ export class ZebuService {
 		].some((value) => value !== undefined && value !== null);
 	}
 
+	private queueTradeNotification(
+		signal: TradeSignal,
+		params: Omit<TradeNotificationParams, "userEmail" | "userName">,
+	): void {
+		const lookup = (this.db as any)?.getUserEmailForSignal;
+		if (typeof lookup !== "function") return;
+
+		Promise.resolve()
+			.then(() => lookup.call(this.db, signal.id))
+			.then((user: { email?: string; name?: string | null } | null) => {
+				if (!user?.email) return;
+				return sendTradeNotificationEmail({
+					...params,
+					userEmail: user.email,
+					userName: user.name ?? null,
+				});
+			})
+			.catch((error) => {
+				console.warn("[ZEBU] trade notification skipped", {
+					tradeSignalId: signal.id,
+					error: error?.message ?? String(error),
+				});
+			});
+	}
+
 	private extractRowOrderId(row: any): string | null {
 		return this.pickFirstString(row?.norenordno, row?.orderNo, row?.order_id, row?.orderId) ?? null;
 	}
@@ -1614,16 +1639,15 @@ export class ZebuService {
 				const cfg = this.getZebuConfigFromAccount(t.tradingAccount as any);
 				const result = await this.executeCloseSignal(cfg, t);
 				updates.push({ id: t.id, status: "closed", brokerOrderId: result.brokerOrderId ?? undefined });
-				this.db.getUserEmailForSignal(t.id).then((u) => {
-					if (!u) return;
-					sendTradeNotificationEmail({
-						userEmail: u.email, userName: u.name, event: "closed",
-						symbol: t.symbol, exchange: String((t as any).exchange ?? ""),
-						side: String(t.action), quantity: Number(t.volume),
-						broker: String((t.tradingAccount as any)?.broker?.code ?? "ZEBU"),
-						tradeSignalId: t.id,
-					}).catch(() => {});
-				}).catch(() => {});
+				this.queueTradeNotification(t, {
+					event: "closed",
+					symbol: t.symbol,
+					exchange: String((t as any).exchange ?? ""),
+					side: String(t.action),
+					quantity: Number(t.volume),
+					broker: String((t.tradingAccount as any)?.broker?.code ?? "ZEBU"),
+					tradeSignalId: t.id,
+				});
 			} catch (error: any) {
 				updates.push({ id: t.id, status: "failed", error: error?.message ?? String(error) });
 			}
@@ -1687,18 +1711,17 @@ export class ZebuService {
 				} else {
 					updates.push({ id: t.id, status: "executed", brokerOrderId });
 				}
-				this.db.getUserEmailForSignal(t.id).then((u) => {
-					if (!u) return;
-					sendTradeNotificationEmail({
-						userEmail: u.email, userName: u.name, event: "executed",
-						symbol: t.symbol, exchange: String((t as any).exchange ?? ""),
-						side: String(t.action), quantity: Number(t.volume),
-						price: Number(order.price ?? 0) || null,
-						brokerOrderId: String(brokerOrderId),
-						broker: String((t.tradingAccount as any)?.broker?.code ?? "ZEBU"),
-						tradeSignalId: t.id,
-					}).catch(() => {});
-				}).catch(() => {});
+				this.queueTradeNotification(t, {
+					event: "executed",
+					symbol: t.symbol,
+					exchange: String((t as any).exchange ?? ""),
+					side: String(t.action),
+					quantity: Number(t.volume),
+					price: Number(order.price ?? 0) || null,
+					brokerOrderId: String(brokerOrderId),
+					broker: String((t.tradingAccount as any)?.broker?.code ?? "ZEBU"),
+					tradeSignalId: t.id,
+				});
 			} catch (e: any) {
 				console.error("[ZEBU] EXEC FAILED", {
 					tradeSignalId: t.id,
@@ -1706,17 +1729,16 @@ export class ZebuService {
 					payload: e?.data,
 				});
 				updates.push({ id: t.id, status: "failed", error: e?.message ?? String(e) });
-				this.db.getUserEmailForSignal(t.id).then((u) => {
-					if (!u) return;
-					sendTradeNotificationEmail({
-						userEmail: u.email, userName: u.name, event: "failed",
-						symbol: t.symbol, exchange: String((t as any).exchange ?? ""),
-						side: String(t.action), quantity: Number(t.volume),
-						errorMessage: e?.message ?? String(e),
-						broker: String((t.tradingAccount as any)?.broker?.code ?? "ZEBU"),
-						tradeSignalId: t.id,
-					}).catch(() => {});
-				}).catch(() => {});
+				this.queueTradeNotification(t, {
+					event: "failed",
+					symbol: t.symbol,
+					exchange: String((t as any).exchange ?? ""),
+					side: String(t.action),
+					quantity: Number(t.volume),
+					errorMessage: e?.message ?? String(e),
+					broker: String((t.tradingAccount as any)?.broker?.code ?? "ZEBU"),
+					tradeSignalId: t.id,
+				});
 			}
 		}
 

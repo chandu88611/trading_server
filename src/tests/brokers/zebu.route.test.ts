@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import jwt from "jsonwebtoken";
+import { requestJson, startInMemoryApp } from "../helpers/inMemoryExpress";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "zebu-route-test-secret";
 
@@ -29,39 +30,7 @@ async function startZebuApp() {
   app.use(express.json());
   app.use("/zebu", new ZebuRouter().getRouter());
 
-  const server = await new Promise<any>((resolve) => {
-    const instance = app.listen(0, () => resolve(instance));
-  });
-
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Failed to bind zebu route test server");
-  }
-
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    async close() {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error?: Error | null) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
-    },
-  };
-}
-
-async function requestJson(url: string, init?: RequestInit) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-
-  return {
-    status: response.status,
-    body: text ? JSON.parse(text) : null,
-  };
+  return startInMemoryApp(app, "zebu-route-test");
 }
 
 test("ZebuRouter: GET and POST order reads use authenticated userId, not request body/query userId", async () => {
