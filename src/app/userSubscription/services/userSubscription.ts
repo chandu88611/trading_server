@@ -69,11 +69,15 @@ export class UserSubscriptionService {
   async subscribe(userId: number, payload: IUserSubscribePayload) {
     const { planId } = payload;
 
-    if (!planId) throw new Error("planId is required");
+    if (!Number.isSafeInteger(planId) || planId <= 0) throw { statusCode: 400, message: "valid_plan_id_required" };
 
     const plan: SubscriptionPlan | null = await this.db.getPlan(planId);
     if (!plan) throw new Error("Invalid or inactive subscription plan");
 
+    // Paid subscriptions are activated only by the verified billing transaction.
+    if (plan.pricing?.isFree !== true || Number(plan.pricing?.priceInr) !== 0) {
+      throw { statusCode: 402, message: "payment_verification_required" };
+    }
     const existing = await this.db.getActiveSubscription(userId,plan);
 
     const alreadySubscribedToSamePlan =

@@ -1,3 +1,9 @@
+import { encrypt, decrypt, encryptCredentials } from "../../../utils/crypto";
+import AppDataSource from "../../../db/data-source";
+import { UserTradingAccount } from "../../../entity/UserTradingAccount";
+import { TradeSignal } from "../../../entity/TradeSignals";
+import { TradingAccountStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
+import { TradeGuardService, isExitSignal } from "../../trade/services/tradeGuard.service";
 import axios, { AxiosInstance } from "axios";
 
 type SaveTokenInput = {
@@ -192,58 +198,64 @@ export class UpstoxService {
 	}
 
 	async executePendingBatch(input: { batchSize?: number }) {
-		const batchSize = input.batchSize || 25;
+        const trades = await AppDataSource.transaction(async manager => {
+            const rows = await manager.query(`SELECT ts.id, st.status FROM trade_signals ts JOIN trade_signals_status st ON st.signal_id=ts.id JOIN user_trading_accounts a ON a.id=ts.trading_account_id JOIN brokers b ON b.id=a.broker_id WHERE b.code='UPSTOX' AND st.status IN ('pending','pending_close') ORDER BY ts.id LIMIT $1 FOR UPDATE OF st SKIP LOCKED`, [Math.max(1, Math.min(input.batchSize ?? 25, 100))]);
+            const jobs: TradeSignal[] = [];
+            for (const row of rows) {
+                await manager.query(`UPDATE trade_signals_status SET status=$2, updated_at=NOW() WHERE signal_id=$1`, [row.id, row.status === "pending_close" ? "in_progress_close" : "in_progress"]);
+                const job = await manager.findOne(TradeSignal, { where: { id: row.id }, relations: ["tradingAccount", "tradingAccount.broker", "status"] });
+                if (job) jobs.push(job);
+            }
+            return jobs;
+        });
+        for (const job of trades) {
+            if (!(await new TradeGuardService().validateTrade(job.tradingAccount, job)).allowed) continue;
+            try {
+                if (!job.instrumentToken) throw new Error("upstox_instrument_token_required");
+                const closing = isExitSignal(job);
+                if (closing && !job.brokerOrderId) throw new Error("upstox_close_requires_entry_order");
+                const side = String(job.action).toUpperCase();
+                if (!["BUY", "SELL"].includes(side)) throw new Error("invalid_order_side");
+                const quantity = Number(job.volume);
+                if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("invalid_order_quantity");
+                const response = await this.placeOrder({ userId: Number(job.tradingAccount.userId), tradingAccountId: job.tradingAccount.id, order: {
+                    instrumentToken: job.instrumentToken, quantity,
+                    side: closing ? side === "BUY" ? "SELL" : "BUY" : side,
+                    product: ["C", "CNC", "DELIVERY"].includes(String(job.product)) ? "D" : "I",
+                    orderType: closing ? "MARKET" : String(job.orderType ?? "MARKET").replace("_order", "").toUpperCase(),
+                    price: closing ? 0 : Number(job.limitPrice ?? 0), triggerPrice: Number(job.stopPrice ?? 0), tag: `tradebro-${job.id}${closing ? "-close" : ""}`,
+                } });
+                const orderId = response?.data?.order_id;
+                if (!orderId) throw new Error("upstox_order_id_missing");
+                await AppDataSource.transaction(async manager => {
+                    if (!closing) await manager.query(`UPDATE trade_signals SET broker_order_id=$2 WHERE id=$1`, [job.id, String(orderId)]);
+                    await manager.query(`UPDATE trade_signals_status SET status=$2, last_error=NULL, updated_at=NOW() WHERE signal_id=$1`, [job.id, closing ? "closed" : "executed"]);
+                });
+            } catch (error: any) {
+                console.error("[UPSTOX] execution failed", { signalId: job.id, error });
+                await AppDataSource.query(`UPDATE trade_signals_status SET status='failed', last_error=$2, attempts=attempts+1, updated_at=NOW() WHERE signal_id=$1`, [job.id, error?.stack ?? error?.message ?? String(error)]);
+            }
+        }
+        return { processed: trades.length };
+    }
 
-		// TODO:
-		// 1. Fetch pending trades where brokerCode = UPSTOX
-		// 2. Mark PROCESSING
-		// 3. Resolve instrumentToken
-		// 4. Place order
-		// 5. Mark EXECUTED / FAILED
+    private async saveTokenToDb(input: { userId: number; tradingAccountId: number; brokerCode: string; accessToken: string; apiKey?: string; baseUrl?: string }) {
+        const repo = AppDataSource.getRepository(UserTradingAccount);
+        const account = await repo.findOne({ where: { id: input.tradingAccountId, userId: input.userId, broker: { code: "UPSTOX" } }, relations: ["broker"] });
+        if (!account) throw { statusCode: 404, message: "trading_account_not_found" };
+        // Verify with Upstox before recording the account as ready.
+        await this.createClient(input.accessToken).get("/v2/user/get-funds-and-margin");
+        account.accessToken = encrypt(input.accessToken);
+        account.status = TradingAccountStatus.VERIFIED;
+        account.lastVerifiedAt = new Date();
+        account.accountMeta = encryptCredentials({ ...(account.accountMeta ?? {}), upstox: { apiKey: input.apiKey, baseUrl: this.defaultBaseUrl } });
+        await repo.save(account);
+        return { tokenSaved: true, tradingAccountId: account.id, verifiedAt: account.lastVerifiedAt };
+    }
 
-		return {
-			brokerCode: "UPSTOX",
-			batchSize,
-			message: "connect_with_existing_pending_trade_worker",
-		};
-	}
-
-	private async saveTokenToDb(input: {
-		userId: number;
-		tradingAccountId: number;
-		brokerCode: string;
-		accessToken: string;
-		apiKey?: string;
-		baseUrl?: string;
-	}) {
-		// TODO:
-		// Replace this with the same DB/token save logic used in ZebuService.
-		// Store accessToken encrypted if your Zebu implementation already encrypts broker tokens.
-
-		return {
-			userId: input.userId,
-			tradingAccountId: input.tradingAccountId,
-			brokerCode: input.brokerCode,
-			baseUrl: input.baseUrl,
-			tokenSaved: true,
-			note: "replace_saveTokenToDb_with_existing_trading_account_token_save_logic",
-		};
-	}
-
-	private async getTokenFromDb(userId: number, tradingAccountId: number): Promise<{
-		accessToken: string;
-		baseUrl?: string;
-	}> {
-		// TODO:
-		// Replace this with the same token fetch/decrypt logic used in ZebuService.
-
-		throw {
-			statusCode: 400,
-			message: "implement_getTokenFromDb_for_upstox",
-			data: {
-				userId,
-				tradingAccountId,
-			},
-		};
-	}
+    private async getTokenFromDb(userId: number, tradingAccountId: number): Promise<{ accessToken: string; baseUrl?: string }> {
+        const account = await AppDataSource.getRepository(UserTradingAccount).findOne({ where: { id: tradingAccountId, userId, broker: { code: "UPSTOX" } }, relations: ["broker"] });
+        if (!account?.accessToken) throw { statusCode: 400, message: "upstox_token_missing" };
+        return { accessToken: decrypt(account.accessToken), baseUrl: this.defaultBaseUrl };
+    }
 }

@@ -1,3 +1,4 @@
+import { encryptCredentials, encrypt } from "../../../utils/crypto";
 import { In, Repository } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 import { UserTradingAccount } from "../../../entity/UserTradingAccount";
@@ -31,7 +32,9 @@ export class DeltaDB {
 			...metaPatch,
 		};
 
-		account.accountMeta = nextMeta;
+		account.accountMeta = encryptCredentials(nextMeta);
+        if (account.accessToken) account.accessToken = encrypt(account.accessToken);
+        if (account.refreshToken) account.refreshToken = encrypt(account.refreshToken);
 
 		return this.accountRepo.save(account);
 	}

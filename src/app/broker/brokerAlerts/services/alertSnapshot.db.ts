@@ -117,6 +117,13 @@ export class AlertSnapshotDB {
     ];
 
     const columns = [
+      `ALTER TABLE user_trading_accounts ADD COLUMN IF NOT EXISTS risk_metrics JSONB;`,
+      `ALTER TABLE trade_signals_status ALTER COLUMN status TYPE VARCHAR(40);`,
+      `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS risk_reserved_at TIMESTAMPTZ;`,
+      `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS broker_order_id TEXT;`,
+      `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS broker_position_id TEXT;`,
+      `ALTER TABLE trade_signals ALTER COLUMN broker_order_id TYPE TEXT USING broker_order_id::text;`,
+      `ALTER TABLE trade_signals ALTER COLUMN broker_position_id TYPE TEXT USING broker_position_id::text;`,
       `ALTER TABLE alert_snapshots ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20);`,
       `ALTER TABLE alert_snapshots ADD COLUMN IF NOT EXISTS entry_ref VARCHAR(100);`,
       `ALTER TABLE alert_snapshots ADD COLUMN IF NOT EXISTS order_type VARCHAR(20);`,

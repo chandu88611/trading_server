@@ -1,11 +1,27 @@
+import { getMamFollowers, saveMamAllocation } from "../../trade/services/mamAllocation.service";
+import { sanitizeCredentials } from "../../../utils/crypto";
 // src/app/tradingAccount/controllers/tradingAccount.controller.ts
 import { Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
 import { AuthRequest } from "../../../middleware/auth";
 import { TradingAccountService, CreateTradingAccountPayload, UpdateTradingAccountPayload } from "../services/tradingAccount.service";
 
+function accountResponse(a:any) {
+ const meta=a.accountMeta?.[String(a.broker?.code??"").toLowerCase()]??{};
+ return sanitizeCredentials({...a,hasToken:Boolean(a.accessToken||meta.accessToken),tokenExpiresAt:meta.expiresAt??null});
+}
 export class TradingAccountController {
   private service = new TradingAccountService();
+
+  @ControllerError()
+  async getMamFollowers(req: AuthRequest, res: Response) {
+    res.json({data:await getMamFollowers(Number(req.auth!.userId),Number(req.params.id))});
+  }
+  @ControllerError()
+  async saveMamAllocation(req: AuthRequest, res: Response) {
+    await saveMamAllocation(Number(req.auth!.userId),Number(req.params.id),Number(req.params.followerId),req.body);
+    res.json({message:"allocation_saved"});
+  }
 
   private asObject(value: unknown): Record<string, any> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -221,6 +237,11 @@ export class TradingAccountController {
       accountLabel: a.accountLabel ?? null,
       externalAccountId: a.accountId ?? null,
       status: a.status ?? "pending",
+      isHalted: a.status === "halted" || a.accountMeta?.emergencyHalt === true,
+      isMaster: Boolean(a.isMaster),
+      isEnabled: Boolean(a.isEnabled),
+      hasToken: Boolean(a.accessToken || a.accountMeta?.zebu?.accessToken || a.accountMeta?.dhan?.accessToken),
+      tokenExpiresAt: a.accountMeta?.[String(a.broker?.code ?? "").toLowerCase()]?.expiresAt ?? null,
       lastVerifiedAt: a.lastVerifiedAt ?? null,
       last_verified_at: a.lastVerifiedAt ?? null,
       createdAt: a.createdAt,
@@ -260,7 +281,7 @@ export class TradingAccountController {
       return;
     }
     const accounts = await this.service.listMyAccounts(userId, planId);
-    res.json({ accounts });
+    res.json({ accounts: accounts.map(accountResponse) });
   }
 
   @ControllerError()
@@ -274,7 +295,7 @@ export class TradingAccountController {
     }
 
     const account = await this.service.getMyAccountById(userId, accountId);
-    res.json({ account });
+    res.json({ account: accountResponse(account) });
   }
 
   @ControllerError()
@@ -282,10 +303,7 @@ export class TradingAccountController {
     const userId = Number(req.auth!.userId);
     const payload: CreateTradingAccountPayload = req.body ?? {};
 
-    console.log("Received request to create trading account with payload", {
-      userId,
-      payload,
-    });
+
 
     if (!payload.accountLabel) {
       res.status(400).json({ message: "missing_required_fields" });
@@ -298,7 +316,7 @@ export class TradingAccountController {
 
     const account = await this.service.createMyAccount(userId, payload);
 
-    res.status(201).json({ account });
+    res.status(201).json({ account: accountResponse(account) });
   }
 
   @ControllerError()
@@ -313,7 +331,7 @@ export class TradingAccountController {
     }
 
     const account = await this.service.updateMyAccount(userId, accountId, payload);
-    res.json({ account });
+    res.json({ account: accountResponse(account) });
   }
 
   @ControllerError()
@@ -372,7 +390,7 @@ export class TradingAccountController {
 
 
     const requests = await this.service.getCopyTradingRequests(userId);
-    res.json({ requests });
+    res.json({ requests: sanitizeCredentials(requests) });
 
   }
 

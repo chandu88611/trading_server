@@ -8,6 +8,7 @@ export class TradeRouter {
   private controller = new TradeController();
 
   constructor() {
+    this.routes.get("/metrics", requireAuth([Roles.USER,Roles.ADMIN]),this.controller.getFillMetrics.bind(this.controller));
     this.routes.get(
       "/admin/strategy-trades",
       requireAuth([Roles.ADMIN]),
@@ -73,6 +74,18 @@ export class TradeRouter {
       requireAuth([Roles.USER, Roles.ADMIN]),
       this.controller.closeTrade.bind(this.controller)
     )
+  }
+
+  getFeedbackRouter() {
+    const router = Router();
+    router.post("/api/v1/trading/resume-trading",requireAuth([Roles.USER,Roles.ADMIN]),this.controller.resumeTrading.bind(this.controller));
+    router.get("/api/v1/trade/activity-feed",requireAuth([Roles.USER,Roles.ADMIN]),this.controller.activityFeed.bind(this.controller));
+    router.get("/api/v1/trading/mam/links/:masterAccountId",requireAuth([Roles.USER,Roles.ADMIN]),this.controller.listMamLinks.bind(this.controller));
+    router.post("/api/v1/trading/mam/links",requireAuth([Roles.USER,Roles.ADMIN]),this.controller.createMamLink.bind(this.controller));
+    router.patch("/api/v1/trading/mam/links/:id",requireAuth([Roles.USER,Roles.ADMIN]),this.controller.updateMamLink.bind(this.controller));
+    router.delete("/api/v1/trading/mam/links/:id",requireAuth([Roles.USER,Roles.ADMIN]),this.controller.deleteMamLink.bind(this.controller));
+    router.post("/api/v1/trading/emergency-halt", requireAuth([Roles.USER, Roles.ADMIN]), this.controller.emergencyHalt.bind(this.controller));
+    return router;
   }
 
   getRouter() {

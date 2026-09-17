@@ -24,6 +24,10 @@ router.put("/risk-rules", controller.putRiskRules.bind(controller));
 
 router.get("/payments", controller.listPayments.bind(controller));
 
+router.get("/live-trades", controller.listLiveTrades.bind(controller));
+router.get("/trading-accounts/:id", controller.getTradingAccount.bind(controller));
+router.patch("/trading-accounts/:id/execution", controller.toggleTradingAccount.bind(controller));
+router.get("/brokers/:id/accounts", controller.listBrokerAccounts.bind(controller));
 router.get("/brokers", controller.listBrokers.bind(controller));
 router.post("/brokers", controller.createBroker.bind(controller));
 router.patch("/brokers/:id", controller.updateBroker.bind(controller));

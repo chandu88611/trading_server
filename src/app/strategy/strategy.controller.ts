@@ -1,3 +1,5 @@
+import AppDataSource from "../../db/data-source";
+import { UserStrategyInstance } from "../../entity/UserStrategyInstance";
 import { Response } from "express";
 import { ControllerError } from "../../types/error-handler";
 import { StrategyService } from "./strategy";
@@ -6,6 +8,12 @@ import { HttpStatusCode } from "../../types/constants";
 
 export class StrategyController {
   private service = new StrategyService();
+
+  @ControllerError()
+  async listUser(req: AuthRequest, res: Response) {
+    const data=await AppDataSource.getRepository(UserStrategyInstance).find({where:{userId:Number(req.auth!.userId)},relations:{strategy:true,plan:true,subscription:true},order:{id:"DESC"}});
+    res.json({data:data.filter(row=>row.subscription?.statusV2==="active").map(row=>({id:row.id,strategyId:row.strategyId,name:row.strategy.name,description:row.strategy.description,planName:row.plan.name,planId:row.planId,status:row.status,volume:row.volume}))});
+  }
 
   private isAdmin(req: AuthRequest) {
     const roles = req.auth?.roles ?? [];

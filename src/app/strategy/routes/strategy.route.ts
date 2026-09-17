@@ -13,6 +13,7 @@ export class StrategyRouter {
   private init() {
     const controller = new StrategyController();
 
+    this.router.get("/user", requireAuth([Roles.USER,Roles.ADMIN]), controller.listUser.bind(controller));
     this.router.get(
       "/",
       requireAuth([Roles.USER, Roles.ADMIN]),

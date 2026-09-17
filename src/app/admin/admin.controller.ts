@@ -24,6 +24,29 @@ export class AdminController {
   private service = new AdminService();
 
   @ControllerError()
+  async getTradingAccount(req: AuthRequest, res: Response) {
+    res.json({data:await this.service.getTradingAccount(parseId(req.params.id,"account_id"))});
+  }
+
+  @ControllerError()
+  async toggleTradingAccount(req: AuthRequest, res: Response) {
+    const id = parseId(req.params.id,"account_id");
+    const data = await this.service.toggleTradingAccount(id,req.body?.isEnabled);
+    await this.service.recordAudit({...auditContext(req),action:"admin.account.execution",entityType:"trading_account",entityId:id,metadata:{isEnabled:data.isEnabled}});
+    res.json({data});
+  }
+
+  @ControllerError()
+  async listLiveTrades(req: AuthRequest, res: Response) {
+    res.json({ data: await this.service.listLiveTrades(req.query ?? {}) });
+  }
+
+  @ControllerError()
+  async listBrokerAccounts(req: AuthRequest, res: Response) {
+    res.json({ data: await this.service.listBrokerAccounts(parseId(req.params.id, "broker_id")) });
+  }
+
+  @ControllerError()
   async getSettings(_req: AuthRequest, res: Response) {
     res.json({ message: "admin_settings", data: await this.service.getSettings() });
   }

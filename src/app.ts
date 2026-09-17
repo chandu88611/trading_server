@@ -1,3 +1,8 @@
+import { ActivityFeedService } from "./app/trade/services/activityFeed.service";
+import { MamLinksService } from "./app/trade/services/mamLinks.service";
+import { startTradeEvents } from "./app/trade/services/tradeEvents.service";
+import { ReconciliationService } from "./app/trade/services/reconciliation.service";
+import { EmergencyHaltService } from "./app/trade/services/emergencyHalt.service";
 import "reflect-metadata";
 import express, { Application, NextFunction, Request, Response } from "express";
 import path from "path";
@@ -119,6 +124,10 @@ export default class Server {
       import("./cron/coindcx-exec.worker"),
       import("./cron/crm-sync.cron"),
       import("./cron/stale-jobs.worker"),
+      import("./cron/emergency-halt.worker"),
+      import("./cron/reconciliation.worker"),
+      import("./cron/coindcx-stream.worker"),
+      import("./cron/spot-protection.worker"),
       import("./cron/delta-exec.worker"),
       import("./cron/zebu-instrument-sync.cron"),
     ]);
@@ -294,6 +303,11 @@ export default class Server {
       await this.adminService.ensureSchema();
       await this.copyExecutionService.ensureSchema();
       await this.brokerInstrumentService.ensureSchema();
+      await new MamLinksService().ensureSchema();
+      await new EmergencyHaltService().ensureSchema();
+      await new ReconciliationService().ensureSchema();
+      await new ActivityFeedService().ensureSchema();
+      await startTradeEvents();
 
       const enableSchemaValidation =
         String(process.env.ENABLE_SCHEMA_VALIDATION || "").toLowerCase() ===

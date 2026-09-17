@@ -1,3 +1,7 @@
+import { beforeEach, afterEach, mock } from "node:test";
+import { TradeGuardService } from "../../app/trade/services/tradeGuard.service";
+beforeEach(() => { mock.method(TradeGuardService.prototype, "validateTrade", async () => ({ allowed: true })); });
+afterEach(() => mock.restoreAll());
 import test from "node:test";
 import assert from "node:assert/strict";
 

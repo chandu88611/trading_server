@@ -21,7 +21,7 @@ export class TradeSignalStatus {
   @JoinColumn({ name: "signal_id" })
   tradeSignal!: TradeSignal;
   
-  @Column({ type: "varchar", length: 20 })
+  @Column({ type: "varchar", length: 40 })
   status!: string;
 
   @Column({ name: "attempts", type: "int", default: 0 })

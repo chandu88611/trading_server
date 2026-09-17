@@ -214,7 +214,7 @@ export interface WebhookAuthRequest extends Request {
 }
 
 export function requireWebhookAuth() {
-  return (req: WebhookAuthRequest, res: Response, next: NextFunction) => {
+  return async (req: WebhookAuthRequest, res: Response, next: NextFunction) => {
     console.log("[WEBHOOK_AUTH]", req.method, req.originalUrl);
 
     const token =
@@ -243,6 +243,11 @@ export function requireWebhookAuth() {
         return res.status(401).json({ message: "Invalid webhook token type" });
       }
 
+      if (decoded.subscriptionId) {
+        const ds = (await import("../db/data-source")).default;
+        const rows = await ds.query(`SELECT id FROM user_subscriptions WHERE id=$1 AND user_id=$2 AND webhook_token=$3`, [decoded.subscriptionId, decoded.userId, token]);
+        if (!rows.length) return res.status(401).json({ message: "Webhook token revoked" });
+      }
       req.webhookAuth = {
         userId: String(decoded.userId),
         subscriptionId: decoded.subscriptionId ? String(decoded.subscriptionId) : undefined,

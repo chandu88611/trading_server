@@ -1,3 +1,5 @@
+import { decryptCredentials, decrypt } from "../../../utils/crypto";
+import { TradeGuardService } from "../../trade/services/tradeGuard.service";
 import { DhanDB } from "./dhan.db";
 import { HttpStatusCode } from "../../../types/constants";
 import { TradingAccountStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
@@ -92,7 +94,7 @@ export class DhanService {
 	}
 
 	private async requestTokenWithTotp(account: any, totp: string, baseUrlOverride?: string) {
-		const meta = this.asObject(account?.accountMeta);
+		const meta = this.asObject(decryptCredentials(account?.accountMeta));
 		const dhan = this.asObject(meta.dhan);
 
 		const baseUrl = this.pickFirstString(baseUrlOverride, dhan.baseUrl, process.env.DHAN_BASE_URL);
@@ -160,7 +162,7 @@ export class DhanService {
 	}
 
 	private getDhanConfigFromAccount(account: any): DhanConfig {
-		const meta = this.asObject(account?.accountMeta);
+		const meta = this.asObject(decryptCredentials(account?.accountMeta));
 		const dhan = this.asObject(meta?.dhan);
 
 		const baseUrl = String(
@@ -171,7 +173,7 @@ export class DhanService {
 				"https://api.dhan.co/v2"
 			) ?? ""
 		).trim();
-		const accessToken = String(dhan.accessToken ?? account?.accessToken ?? "").trim();
+		const accessToken = decrypt(String(dhan.accessToken ?? account?.accessToken ?? "").trim());
 		const apiKey = String(dhan.apiKey ?? process.env.DHAN_API_KEY ?? "").trim() || undefined;
 		const clientId = String(this.pickFirstString(dhan.clientId, meta.clientId, meta.accountId, account?.accountId) ?? "").trim() || undefined;
 
@@ -617,6 +619,12 @@ export class DhanService {
 		return data;
 	}
 
+  async getTradeHistory(userId: number, tradingAccountId: number) {
+    const account = await this.db.getTradingAccountById(userId,tradingAccountId);
+    if (!account) throw { statusCode: 404, message: "trading_account_not_found" };
+    return this.dhanRequest(this.getDhanConfigFromAccount(account), "GET", "trades");
+  }
+
 	async getPositions(userId: number, tradingAccountId: number) {
 		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
 		if (!account) {
@@ -668,9 +676,10 @@ export class DhanService {
 		const trades = await this.db.claimPendingTrades(batchSize);
 		if (!trades.length) return { ok: true, processed: 0 };
 
-		const updates: { id: number; status: string; error?: string }[] = [];
+		const updates: { id: number; status: string; error?: string; brokerOrderId?: string }[] = [];
 
 		for (const t of trades) {
+            if (!(await new TradeGuardService().validateTrade(t.tradingAccount, t)).allowed) continue;
 			try {
 				if (!t.tradingAccount) {
 					updates.push({ id: t.id, status: "failed", error: "missing_trading_account" });
@@ -693,14 +702,16 @@ export class DhanService {
 					tag: order.clientOrderId,
 				});
 
-				await this.placeOrderWithFallback(cfg, payload);
+				const placed: any = await this.placeOrderWithFallback(cfg, payload);
+                const brokerOrderId = String(placed?.orderId ?? placed?.data?.orderId ?? "");
+                if (!brokerOrderId) throw new Error("missing_broker_order_id");
 				console.info("[DHAN] EXEC OK", {
 					tradeSignalId: t.id,
 					symbol: payload.symbol,
 					exchange: payload.exchange,
 					quantity: payload.quantity,
 				});
-				updates.push({ id: t.id, status: "executed" });
+				updates.push({ id: t.id, status: "submitted", brokerOrderId });
 			} catch (e: any) {
 				console.log(e);
 				console.error("[DHAN] EXEC FAILED", {

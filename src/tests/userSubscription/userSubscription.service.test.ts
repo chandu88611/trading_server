@@ -114,7 +114,7 @@ test("UserSubscriptionService: subscribe rejects unavailable strategy plans for 
     async () => ({
       id: 200,
       isActive: true,
-      pricing: { interval: "monthly" },
+      pricing: { interval: "monthly", isFree: true, priceInr: 0 },
       planStrategies: [
         {
           strategyId: 300,

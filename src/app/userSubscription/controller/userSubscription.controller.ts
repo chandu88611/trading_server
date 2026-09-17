@@ -1,3 +1,4 @@
+import { UserSubscriptionDBService } from "../services/userSubscription.db";
 import { Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
 import { UserSubscriptionService } from "../services/userSubscription";
@@ -34,6 +35,29 @@ export class UserSubscriptionController {
         message: "admin_subscriptions_not_allowed",
       };
     }
+  }
+
+  @ControllerError()
+  async adminMutation(req: AuthRequest, res: Response) {
+    this.ensureAdmin(req);
+    const action = req.path.endsWith("/status") ? "status" : req.path.endsWith("/execution") ? "execution" : "token";
+    const data = await new UserSubscriptionDBService().adminMutate(Number(req.params.id), action, req.body ?? {});
+    res.json({ message: "subscription_updated", data });
+  }
+
+  @ControllerError()
+  async activateDevSandbox(req: AuthRequest, res: Response) {
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_SANDBOX_BILLING !== "true") {
+      res.status(403).json({ message: "sandbox_billing_disabled" });
+      return;
+    }
+    const { planId, durationDays = 30 } = req.body ?? {};
+    if (!Number.isSafeInteger(planId) || planId <= 0 || !Number.isSafeInteger(durationDays) || durationDays < 1 || durationDays > 36500) {
+      res.status(400).json({ message: "valid_plan_and_duration_required" });
+      return;
+    }
+    const data = await new UserSubscriptionDBService().activateDevSandbox(Number(req.auth!.userId), planId, durationDays);
+    res.status(200).json({ message: "Sandbox subscription activated", data });
   }
 
   @ControllerError()
@@ -194,22 +218,38 @@ export class UserSubscriptionController {
     res.json({ message: "webhook_settings_saved", data });
   }
 
+  @ControllerError()
   async saveStrategySelections(req: AuthRequest, res: Response) {
-    try {
-      const userId = Number(req.auth!.userId);
-      const selections = (req.body as any)?.strategySelections;
-      if (!selections || typeof selections !== "object") {
-        res.status(400).json({ message: "strategySelections_required" });
-        return;
-      }
-      const repo = AppDataSource.getRepository(UserSubscription);
-      const sub = await repo.findOne({ where: { userId } as any, order: { updatedAt: "DESC" } as any });
-      if (!sub) { res.status(404).json({ message: "subscription_not_found" }); return; }
-      sub.metadata = { ...(sub.metadata ?? {}), strategySelections: selections };
-      await repo.save(sub);
-      res.json({ data: sub });
-    } catch (e: any) {
-      res.status(500).json({ message: e?.message ?? "error" });
+    const userId = Number(req.auth!.userId);
+    const body = req.body ?? {};
+    const planIds = Object.keys(body.strategySelections ?? {});
+    const planId = Number(body.planId ?? (planIds.length === 1 ? planIds[0] : 0));
+    const subscriptionId = Number(body.subscriptionId ?? 0);
+    if ((!Number.isSafeInteger(planId) || planId <= 0) && (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0)) {
+      return res.status(400).json({ message: "subscription_or_plan_id_required" });
     }
+    const data = await AppDataSource.transaction(async manager => {
+      const repo = manager.getRepository(UserSubscription);
+      const sub = await repo.findOne({ where: { userId, ...(subscriptionId ? { id: subscriptionId } : { planId }) } as any, order: { updatedAt: "DESC" }, lock: { mode: "pessimistic_write" } });
+      if (!sub || sub.statusV2 !== "active" || (sub.endDate && sub.endDate <= new Date())) throw { statusCode: 404, message: "active_subscription_not_found" };
+      const key = String(sub.planId);
+      const metadata = { ...(sub.metadata ?? {}) };
+      if (body.strategySelections !== undefined) {
+        const selected = body.strategySelections?.[key];
+        if (!Array.isArray(selected) || selected.some((id: any) => !/^\d+$/.test(String(id)))) throw { statusCode: 400, message: "invalid_strategy_selections" };
+        const available = await manager.query(`SELECT strategy_id FROM plan_strategies WHERE plan_id=$1`, [sub.planId]);
+        if (selected.some((id: any) => !available.some((row: any) => String(row.strategy_id) === String(id)))) throw { statusCode: 400, message: "strategy_not_in_plan" };
+        metadata.strategySelections = { ...(metadata.strategySelections ?? {}), [key]: [...new Set(selected.map(String))] };
+      }
+      if (body.planSignals !== undefined) {
+        const settings = body.planSignals?.[key];
+        if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw { statusCode: 400, message: "invalid_plan_settings" };
+        if (settings.tvIndianProduct && !["MIS", "CNC", "NRML", "INTRADAY", "DELIVERY", "MARGIN"].includes(settings.tvIndianProduct)) throw { statusCode: 400, message: "invalid_indian_product" };
+        metadata.planSignals = { ...(metadata.planSignals ?? {}), [key]: settings };
+      }
+      sub.metadata = metadata;
+      return repo.save(sub);
+    });
+    return res.json({ data });
   }
 }

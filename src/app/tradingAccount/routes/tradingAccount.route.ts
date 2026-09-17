@@ -68,6 +68,8 @@ export class TradingAccountRouter {
       this.controller.listMyAccounts.bind(this.controller)
     );
 
+    this.routes.get("/:id/followers", requireAuth([Roles.USER,Roles.ADMIN]), this.controller.getMamFollowers.bind(this.controller));
+    this.routes.patch("/:id/followers/:followerId/allocation", requireAuth([Roles.USER,Roles.ADMIN]), this.controller.saveMamAllocation.bind(this.controller));
     // Get specific account by ID
     this.routes.get(
       "/:id",

@@ -1,3 +1,7 @@
+import { TradingAccountController } from "../tradingAccount/controllers/tradingAccount.controller";
+import { StrategyController } from "../strategy/strategy.controller";
+import { requireAuth, Roles } from "../../middleware/auth";
+import { TradeController } from "../trade/controllers/trade.controller";
 import { Router } from "express";
 import { UserRouter } from "../user/routes";
 import AuthRouter from "../auth/routes/auth.route";
@@ -33,6 +37,13 @@ export class ApplicationRouter {
   }
 
   initApplicationRoutes() {
+    const accountController=new TradingAccountController();
+    this.applicationRoutes.get("/api/v1/trading-account",requireAuth([Roles.USER,Roles.ADMIN]),accountController.listMyAccountsMe.bind(accountController));
+    const strategyController=new StrategyController();
+    this.applicationRoutes.get("/api/v1/strategy/user",requireAuth([Roles.USER,Roles.ADMIN]),strategyController.listUser.bind(strategyController));
+    const tradeController = new TradeController();
+    this.applicationRoutes.use(new TradeRouter().getFeedbackRouter());
+    this.applicationRoutes.get("/trading/events", requireAuth([Roles.USER,Roles.ADMIN]), tradeController.events.bind(tradeController));
     const supportTicketRouter = new SupportTicketRouter();
     this.applicationRoutes.use("/user", new UserRouter().getRouter());
     this.applicationRoutes.use("/auth", new AuthRouter().getRouter());

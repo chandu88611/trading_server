@@ -40,7 +40,7 @@ export class AlertSnapshotController {
       tradingStrength: payload?.tradingStrength ?? null,
     });
     const s = await this.service.create(fullPayload);
-    res.status(201).json({ message: "created", data: s });
+    res.status(200).json({ message: "created", data: s });
   }
 
   @ControllerError()

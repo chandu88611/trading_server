@@ -1,3 +1,4 @@
+import { encrypt, decrypt } from "../../../utils/crypto";
 import { In, Repository } from "typeorm";
 import { TradeSignal } from "../../../entity/TradeSignals";
 import { TradeSignalStatus } from "../../../entity/TradeSignalsStatus";
@@ -195,10 +196,10 @@ export class CTradeSignalDB {
     if (!Number.isFinite(tradingAccountId) || tradingAccountId <= 0 || !access) return;
 
     const patch: any = {
-      accessToken: access,
+      accessToken: encrypt(access),
     };
     const refresh = String(refreshToken ?? "").trim();
-    if (refresh) patch.refreshToken = refresh;
+    if (refresh) patch.refreshToken = encrypt(refresh);
 
     await this.tradingAccountRepo.update({ id: tradingAccountId }, patch);
   }
@@ -215,8 +216,8 @@ export class CTradeSignalDB {
       gatewayUserId: String(acc.userId),
       accountId: Number(acc.accountId),
       env: (env === "live" ? "live" : "demo") as "demo" | "live",
-      accessToken: String((acc as any).accessToken ?? "").trim(),
-      refreshToken: String((acc as any).refreshToken ?? "").trim() || undefined,
+      accessToken: decrypt(String((acc as any).accessToken ?? "").trim()),
+      refreshToken: decrypt(String((acc as any).refreshToken ?? "").trim()) || undefined,
     };
   }
 
@@ -335,8 +336,8 @@ export class CTradeSignalDB {
         const tradingAccountId = Number(s?.tradingAccount?.id ?? s?.tradingAccountId);
         const accountId = Number(s?.tradingAccount?.accountId);
         const env = String((s?.tradingAccount as any)?.accountMeta?.env ?? "").trim().toLowerCase();
-        const accessToken = String(s?.tradingAccount?.accessToken ?? "").trim();
-        const refreshToken = String(s?.tradingAccount?.refreshToken ?? "").trim();
+        const accessToken = decrypt(String(s?.tradingAccount?.accessToken ?? "").trim());
+        const refreshToken = decrypt(String(s?.tradingAccount?.refreshToken ?? "").trim());
 
         if (
           !userId ||
@@ -564,8 +565,8 @@ export class CTradeSignalDB {
         const tradingAccountId = Number(s?.tradingAccount?.id ?? s?.tradingAccountId);
         const accountId = Number(s?.tradingAccount?.accountId);
         const env = String((s?.tradingAccount as any)?.accountMeta?.env ?? "").trim().toLowerCase();
-        const accessToken = String(s?.tradingAccount?.accessToken ?? "").trim();
-        const refreshToken = String(s?.tradingAccount?.refreshToken ?? "").trim();
+        const accessToken = decrypt(String(s?.tradingAccount?.accessToken ?? "").trim());
+        const refreshToken = decrypt(String(s?.tradingAccount?.refreshToken ?? "").trim());
 
         if (
           !Number.isFinite(userId) ||

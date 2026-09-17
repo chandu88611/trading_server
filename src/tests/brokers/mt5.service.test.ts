@@ -1,10 +1,14 @@
+import { beforeEach, afterEach, mock } from "node:test";
+import { TradeGuardService } from "../../app/trade/services/tradeGuard.service";
+beforeEach(() => { mock.method(TradeGuardService.prototype, "validateTrade", async () => ({ allowed: true })); });
+afterEach(() => mock.restoreAll());
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { Mt5ListenerDBServices } from "../../app/mt5Listener/mt5Listener.db";
 import { Mt5ListenerServices } from "../../app/mt5Listener/mt5Listener.services";
 
-test("MT5: returns normalized signal and marks in-progress", async () => {
+test("MT5: returns normalized signal from an atomically claimed job", async () => {
   let markedInProgress = false;
 
   const service = new Mt5ListenerServices({
@@ -14,7 +18,7 @@ test("MT5: returns normalized signal and marks in-progress", async () => {
         action: "BUY",
         symbol: "EURUSD",
         volume: 0.2,
-        status: { id: 88 },
+        status: { id: 88, status: "in_progress" },
       } as any;
     },
     async markJobInProgress() {
@@ -30,7 +34,7 @@ test("MT5: returns normalized signal and marks in-progress", async () => {
 
   const signal = await service.getSignalForEA("acct-1");
 
-  assert.equal(markedInProgress, true);
+  assert.equal(markedInProgress, false);
   assert.deepEqual(signal, {
     ackId: 101,
     side: "buy",
@@ -215,7 +219,7 @@ test("MT5: close payload resolves ticket from broker position, broker order, the
       orderId: 7001,
       brokerOrderId: "8001",
       brokerPositionId: "9001",
-      status: { id: 96, status: "pending_close" },
+      status: { id: 96, status: "in_progress_close" },
     },
     {
       id: 110,
@@ -223,7 +227,7 @@ test("MT5: close payload resolves ticket from broker position, broker order, the
       orderId: 7002,
       brokerOrderId: "8002",
       brokerPositionId: null,
-      status: { id: 97, status: "pending_close" },
+      status: { id: 97, status: "in_progress_close" },
     },
     {
       id: 111,
@@ -231,7 +235,7 @@ test("MT5: close payload resolves ticket from broker position, broker order, the
       orderId: 7003,
       brokerOrderId: null,
       brokerPositionId: null,
-      status: { id: 98, status: "pending_close" },
+      status: { id: 98, status: "in_progress_close" },
     },
   ] as any[];
 

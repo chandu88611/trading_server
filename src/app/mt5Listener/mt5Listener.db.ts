@@ -176,8 +176,8 @@ export class Mt5ListenerDBServices {
           `
           UPDATE trade_signals
           SET order_id=COALESCE($2::bigint, order_id),
-              broker_order_id=COALESCE($3::bigint, broker_order_id),
-              broker_position_id=COALESCE($4::bigint, broker_position_id)
+              broker_order_id=COALESCE($3::text, broker_order_id),
+              broker_position_id=COALESCE($4::text, broker_position_id)
           WHERE id=$1
           `,
           [job.id, orderId, brokerOrderId, brokerPositionId]
@@ -204,8 +204,8 @@ export class Mt5ListenerDBServices {
           `
           UPDATE trade_signals
           SET order_id=COALESCE($2::bigint, order_id),
-              broker_order_id=COALESCE($3::bigint, broker_order_id),
-              broker_position_id=COALESCE($4::bigint, broker_position_id)
+              broker_order_id=COALESCE($3::text, broker_order_id),
+              broker_position_id=COALESCE($4::text, broker_position_id)
           WHERE id=$1
           `,
           [job.id, orderId, brokerOrderId, brokerPositionId]

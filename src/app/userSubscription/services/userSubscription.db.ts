@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Brackets, DeepPartial, EntityManager, In, Repository } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 
@@ -76,6 +77,33 @@ export class UserSubscriptionDBService {
       ON user_subscriptions(webhook_token)
       WHERE webhook_token IS NOT NULL;
     `);
+  }
+
+  async adminMutate(id: number, action: "status" | "execution" | "token", body: any) {
+    if (!Number.isSafeInteger(id) || id <= 0) throw { statusCode: 400, message: "invalid_subscription_id" };
+    return AppDataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(UserSubscription);
+      const sub = await repo.findOne({ where: { id }, lock: { mode: "pessimistic_write" } });
+      if (!sub) throw { statusCode: 404, message: "subscription_not_found" };
+      if (action === "status") {
+        const status = body.statusV2 === "suspended" ? SubscriptionStatus.PAUSED : body.statusV2;
+        if (!Object.values(SubscriptionStatus).includes(status)) throw { statusCode: 400, message: "invalid_subscription_status" };
+        if (status === SubscriptionStatus.ACTIVE && sub.endDate && sub.endDate <= new Date()) {
+          throw { statusCode: 409, message: "subscription_expired" };
+        }
+        sub.status = sub.statusV2 = status;
+        sub.executionEnabled = status === SubscriptionStatus.ACTIVE;
+      } else if (action === "execution") {
+        if (typeof body.enabled !== "boolean") throw { statusCode: 400, message: "enabled_must_be_boolean" };
+        if (body.enabled && (sub.statusV2 !== SubscriptionStatus.ACTIVE || (sub.endDate && sub.endDate <= new Date()))) {
+          throw { statusCode: 409, message: "active_subscription_required" };
+        }
+        sub.executionEnabled = body.enabled;
+      } else {
+        sub.webhookToken = signWebhookToken({ userId: Number(sub.userId), subscriptionId: sub.id, planId: Number(sub.planId), nonce: randomUUID() }, sub.endDate ?? new Date(Date.now() + 365 * 86400000));
+      }
+      return repo.save(sub);
+    });
   }
 
   async ensureWebhookToken(
@@ -385,6 +413,30 @@ export class UserSubscriptionDBService {
     });
   }
 
+  async activateDevSandbox(userId: number, planId: number, durationDays: number) {
+    return AppDataSource.transaction(async (manager) => {
+      // Serialize repeat clicks for this user/plan without changing the subscription schema.
+      await manager.query("SELECT pg_advisory_xact_lock($1, $2)", [userId, planId]);
+      const plan = await manager.getRepository(SubscriptionPlan).findOne({ where: { id: planId, isActive: true } });
+      if (!plan) throw { statusCode: 404, message: "active_plan_not_found" };
+      const repo = manager.getRepository(UserSubscription);
+      const existing = await repo.findOne({ where: { userId, planId }, order: { createdAt: "DESC" } });
+      const expiresAt = new Date(Date.now() + durationDays * 86400000);
+      const sandbox = { paymentStatus: "PAID", paymentProvider: "SANDBOX_DEV", razorpayPaymentId: `pay_sandbox_${Date.now()}`, expiresAt: expiresAt.toISOString() };
+      const subscription = repo.create({
+        ...(existing ?? {}), userId, planId, status: SubscriptionStatus.ACTIVE, statusV2: SubscriptionStatus.ACTIVE,
+        startDate: new Date(), endDate: expiresAt, executionEnabled: true, autoRenew: false,
+        cancelAt: null, canceledAt: null, liquidateOnlyUntil: null, webhookToken: null,
+        metadata: { ...(existing?.metadata ?? {}), ...sandbox },
+      });
+      const saved = await this.ensureWebhookToken(await repo.save(subscription), manager);
+      // Existing instances retain their account binding and selections on repeat activation.
+      const instances = await manager.getRepository(UserStrategyInstance).count({ where: { subscriptionId: saved.id } });
+      if (!instances) await this.upsertStrategyInstanceForSubscription(saved, manager);
+      return { ...saved, ...sandbox };
+    });
+  }
+
   async createSubscription(userId: number, planId: number, durationDays: number) {
     const now = new Date();
     const end = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
@@ -585,9 +637,8 @@ export class UserSubscriptionDBService {
       },
     };
 
-    const saved = sub.isWebhookEnabled
-      ? await this.ensureWebhookToken(sub)
-      : await this.subRepo.save(sub);
+    if (sub.isWebhookEnabled) await this.ensureWebhookToken(sub);
+    const saved = await this.subRepo.save(sub);
 
     return {
       id: Number(saved.id),

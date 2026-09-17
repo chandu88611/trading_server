@@ -68,6 +68,7 @@ export type UserSettingsEdging = {
 };
 
 export type UserSettingsRiskLimits = {
+  configuration?: Record<string, any>;
   isEnabled: boolean;
   dailyLossLimit: number | null;
   dailyProfitTarget: number | null;

@@ -1,3 +1,5 @@
+import { decryptCredentials, decrypt } from "../../../utils/crypto";
+import { TradeGuardService } from "../../trade/services/tradeGuard.service";
 import crypto from "crypto";
 import { sendTradeNotificationEmail, TradeNotificationParams } from "../../../types/email.service";
 import AppDataSource from "../../../db/data-source";
@@ -49,6 +51,7 @@ type NorenAction =
 	| "PlaceOrder"
 	| "ModifyOrder"
 	| "CancelOrder"
+	| "TradeBook"
 	| "OrderBook"
 	| "PositionBook"
 	| "Holdings"
@@ -301,7 +304,7 @@ export class ZebuService {
 		password: string,
 		factor2: string
 	): Promise<ZebuGeneratedToken> {
-		const meta = this.asObject(account?.accountMeta);
+		const meta = this.asObject(decryptCredentials(account?.accountMeta));
 		const zebu = this.asObject(meta.zebu);
 
 		const baseUrl = this.normalizeNorenBaseUrl(this.pickFirstString(zebu.baseUrl, process.env.ZEBU_BASE_URL));
@@ -417,11 +420,11 @@ export class ZebuService {
 	}
 
 	private getZebuConfigFromAccount(account: any): ZebuConfig {
-		const meta = this.asObject(account?.accountMeta);
+		const meta = this.asObject(decryptCredentials(account?.accountMeta));
 		const zebu = this.asObject(meta?.zebu);
 
 		const baseUrl = this.normalizeNorenBaseUrl(this.pickFirstString(zebu.baseUrl, process.env.ZEBU_BASE_URL));
-		const accessToken = String(zebu.accessToken ?? account?.accessToken ?? "").trim();
+		const accessToken = decrypt(String(zebu.accessToken ?? account?.accessToken ?? "").trim());
 		const apiKey = String(this.pickFirstString(zebu.apiKey, meta.apiKey, process.env.ZEBU_API_KEY) ?? "").trim() || undefined;
 		const uid = this.normalizeNorenUid(
 			this.pickFirstString(
@@ -706,6 +709,7 @@ export class ZebuService {
 
 			const actionMap: Record<string, NorenAction> = {
 				orders: "OrderBook",
+                trades: "TradeBook",
 				positions: "PositionBook",
 				holdings: "Holdings",
 				limits: "Limits",
@@ -1278,6 +1282,12 @@ export class ZebuService {
 		return this.zebuRequest(cfg, "GET", "orders");
 	}
 
+  async getTradeHistory(userId: number, tradingAccountId: number) {
+    const account = await this.db.getTradingAccountById(userId,tradingAccountId);
+    if (!account) throw { statusCode: 404, message: "trading_account_not_found" };
+    return this.zebuRequest(this.getZebuConfigFromAccount(account), "GET", "trades");
+  }
+
 	async getPositions(userId: number, tradingAccountId: number) {
 		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
 		if (!account) {
@@ -1670,6 +1680,7 @@ export class ZebuService {
 		const updates: { id: number; status: string; error?: string; brokerOrderId?: string | number | null }[] = [];
 
 		for (const t of trades) {
+            if (!(await new TradeGuardService().validateTrade(t.tradingAccount, t)).allowed) continue;
 			try {
 				if (!t.tradingAccount) {
 					updates.push({ id: t.id, status: "failed", error: "missing_trading_account" });

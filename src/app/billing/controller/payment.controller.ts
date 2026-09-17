@@ -44,7 +44,7 @@ export class PaymentController {
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
     const { planId } = req.body as { planId: number };
-    if (!planId) return res.status(400).json({ message: "planId required" });
+    if (!Number.isSafeInteger(planId) || planId <= 0) return res.status(400).json({ message: "valid_plan_id_required" });
 
     const planRepo = (await import("../../../db/data-source")).default.getRepository(
       SubscriptionPlan
@@ -57,6 +57,9 @@ export class PaymentController {
     if (!plan) return res.status(404).json({ message: "Plan not found" });
     if (!(plan as any).isActive) return res.status(400).json({ message: "Plan is inactive" });
 
+    if (plan.pricing?.isFree === true && Number(plan.pricing.priceInr) === 0) {
+      return res.status(400).json({ message: "use_free_plan_activation" });
+    }
     const checkout = await billingDb.createRazorpayCheckout(userId, plan);
 
     return res.status(201).json({

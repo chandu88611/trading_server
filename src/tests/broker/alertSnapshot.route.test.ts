@@ -214,7 +214,7 @@ test("AlertSnapshotRouter: POST /tradingview/alerts accepts a subscriber webhook
       }
     );
 
-    assert.equal(result.status, 201);
+    assert.equal(result.status, 200);
     assert.deepEqual(capturedPayload, {
       ...body,
       userId: 77,

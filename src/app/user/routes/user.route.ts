@@ -106,6 +106,7 @@ export class UserRouter {
       userController.getDashboard.bind(userController)
     );
 
+    this.userRoutes.patch("/trading-preferences",requireAuth([Roles.USER,Roles.ADMIN]),userController.saveTradingPreferences.bind(userController));
     this.userRoutes.get(
       "/settings",
       requireAuth([Roles.USER, Roles.ADMIN]),

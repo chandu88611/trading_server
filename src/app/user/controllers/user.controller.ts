@@ -1,3 +1,5 @@
+import AppDataSource from "../../../db/data-source";
+import { validateRiskConfiguration } from "../../trade/services/tradeGuard.service";
 // src/app/user/controllers/user.controller.ts
 import { Request, Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
@@ -30,6 +32,19 @@ export class UserController {
     delete safeData.razorpayContactId;
     delete safeData.razorpayFundAccountId;
     return safeData;
+  }
+
+  @ControllerError()
+  async saveTradingPreferences(req:AuthRequest,res:Response) {
+    const {allowTrade,executionMode,allowedMarkets}=req.body??{};
+    if(typeof allowTrade!=="boolean" || !["EXECUTION","SIGNALS_ONLY","PAPER"].includes(executionMode) || !allowedMarkets || ["FOREX","INDIA","CRYPTO","COPY"].some(m=>typeof allowedMarkets[m]!=="boolean")) throw {statusCode:400,message:"invalid_trading_preferences"};
+    const configuration={executionMode,allowedMarkets:Object.fromEntries(["FOREX","INDIA","CRYPTO","COPY"].map(m=>[m,allowedMarkets[m]]))};
+    validateRiskConfiguration(configuration);
+    await AppDataSource.transaction(async manager=>{
+      await manager.query(`UPDATE users SET allow_trade=$2 WHERE id=$1`,[req.auth!.userId,allowTrade]);
+      await manager.query(`INSERT INTO user_risk_limits(user_id,configuration) VALUES($1,$2::jsonb) ON CONFLICT(user_id) DO UPDATE SET configuration=user_risk_limits.configuration||EXCLUDED.configuration,updated_at=now()`,[req.auth!.userId,JSON.stringify(configuration)]);
+    });
+    res.json({message:"trading_preferences_saved"});
   }
 
   @ControllerError()
@@ -432,7 +447,11 @@ export class UserController {
       return;
     }
 
+    const configuration = req.body?.configuration;
+    try { if (configuration !== undefined) validateRiskConfiguration(configuration); }
+    catch (error: any) { res.status(400).json({ message: error.message }); return; }
     const riskLimits = await this.service.upsertRiskLimits(userId, {
+      ...(configuration !== undefined ? { configuration } : {}),
       isEnabled,
       dailyLossLimit,
       dailyProfitTarget,

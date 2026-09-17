@@ -1,3 +1,4 @@
+import { encryptCredentials, encrypt } from "../../../utils/crypto";
 import { In, Repository } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 import { UserTradingAccount } from "../../../entity/UserTradingAccount";
@@ -24,10 +25,12 @@ export class DhanDB {
 
 	async updateAccountMeta(account: UserTradingAccount, metaPatch: Record<string, any>) {
 		const nextMeta = { ...(account.accountMeta ?? {}), ...metaPatch };
-		account.accountMeta = nextMeta;
-		console.log("Updating trading account meta", { accountId: account.id, userId: account.userId, metaPatch, nextMeta,  });
+		account.accountMeta = encryptCredentials(nextMeta);
+        if (account.accessToken) account.accessToken = encrypt(account.accessToken);
+        if (account.refreshToken) account.refreshToken = encrypt(account.refreshToken);
 		if(metaPatch?.dhan?.accessToken) {
-			account.accessToken = nextMeta.dhan.accessToken ?? account.accessToken;
+            account.lastVerifiedAt = new Date();
+			account.accessToken = encrypt(nextMeta.dhan.accessToken ?? account.accessToken);
 		}
 		return this.accountRepo.save(account);
 	}
@@ -116,7 +119,7 @@ export class DhanDB {
 		}
 	}
 
-	async updateTradeStatus(data: { id: number; status: string; error?: string }[]) {
+	async updateTradeStatus(data: { id: number; status: string; error?: string; brokerOrderId?: string }[]) {
 		const ids = data.map((d) => d.id).filter(Boolean);
 		if (!ids.length) return;
 
@@ -131,6 +134,7 @@ export class DhanDB {
 			data.map(async (item) => {
 				const job = jobMap.get(item.id);
 				if (!job?.status?.id) return;
+        if (item.brokerOrderId) await this.tradeSignalRepo.update(job.id, { brokerOrderId: item.brokerOrderId });
 
 				const status = String(item.status ?? "").toLowerCase();
 

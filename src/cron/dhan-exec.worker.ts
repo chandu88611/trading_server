@@ -1,3 +1,4 @@
+import { UpstoxService } from "../app/upstox/services/upstox.service";
 import AppDataSource, { ensureAppDataSourceInitialized } from "../db/data-source";
 import { DhanService } from "../app/dhan/services/dhan.service";
 
@@ -18,6 +19,7 @@ setInterval(async () => {
 				await ensureAppDataSourceInitialized();
 			}
 			await dhan.executePendingBatch({ batchSize });
+            await new UpstoxService().executePendingBatch({ batchSize });
 	} catch (e) {
 			const isDriverNotConnected =
 				e instanceof Error && String(e.message || "").includes("Driver not Connected");

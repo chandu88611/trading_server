@@ -13,6 +13,13 @@ export class UserSubscriptionRouter {
   initRoutes() {
     const controller = new UserSubscriptionController();
 
+    this.router.post("/subscription/activate-free", requireAuth([Roles.USER]), controller.subscribe.bind(controller));
+    this.router.patch("/admin/subscription/:id/status", requireAuth([Roles.ADMIN]), controller.adminMutation.bind(controller));
+    this.router.patch("/admin/subscription/:id/execution", requireAuth([Roles.ADMIN]), controller.adminMutation.bind(controller));
+    this.router.post("/admin/subscription/:id/regenerate-token", requireAuth([Roles.ADMIN]), controller.adminMutation.bind(controller));
+
+    this.router.post("/api/v1/subscription/dev-sandbox-activate", requireAuth([Roles.USER]), controller.activateDevSandbox.bind(controller));
+
     // ---- User routes ----
     this.router.post(
       "/subscription/subscribe",

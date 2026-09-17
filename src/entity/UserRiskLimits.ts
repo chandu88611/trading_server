@@ -50,6 +50,9 @@ export class UserRiskLimits {
   @Column({ name: "cooldown_after_loss_mins", type: "int", nullable: true })
   cooldownAfterLossMins!: number | null;
 
+  @Column({ name: "configuration", type: "jsonb", default: () => "'{}'::jsonb" })
+  configuration!: Record<string, any>;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 

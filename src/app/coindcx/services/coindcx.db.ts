@@ -1,8 +1,10 @@
+import { encryptCredentials, encrypt } from "../../../utils/crypto";
 import { In, Repository } from "typeorm";
 import AppDataSource from "../../../db/data-source";
 import { UserTradingAccount } from "../../../entity/UserTradingAccount";
 import { TradeSignal } from "../../../entity/TradeSignals";
 import { TradeSignalStatus } from "../../../entity/TradeSignalsStatus";
+import { TradingAccountStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
 
 export class CoinDCXDB {
 	private accountRepo: Repository<UserTradingAccount>;
@@ -17,7 +19,10 @@ export class CoinDCXDB {
 
 	async getTradingAccountById(userId: number, id: number) {
 		return this.accountRepo.findOne({
-			where: { id, userId },
+			where: [
+				{ id, userId, broker: { code: "COINDCX" } },
+				{ id, userId, broker: { name: "CoinDCX" } },
+			],
 			relations: ["broker"],
 		});
 	}
@@ -48,6 +53,7 @@ export class CoinDCXDB {
 			JOIN brokers b ON b.id = ta.broker_id
 			WHERE ta.id = $1
 			  AND ta.user_id = $2
+			  AND (UPPER(b.code) = 'COINDCX' OR UPPER(b.name) = 'COINDCX')
 			LIMIT 1
 			`,
 			[tradingAccountId, userId]
@@ -58,14 +64,21 @@ export class CoinDCXDB {
 
 	async updateAccountMeta(
 		account: UserTradingAccount,
-		metaPatch: Record<string, any>
+		metaPatch: Record<string, any>,
+		verification?: { status: TradingAccountStatus; checkedAt: Date | null }
 	) {
 		const nextMeta = {
 			...(account.accountMeta ?? {}),
 			...metaPatch,
 		};
 
-		account.accountMeta = nextMeta;
+		account.accountMeta = encryptCredentials(nextMeta);
+        if (account.accessToken) account.accessToken = encrypt(account.accessToken);
+        if (account.refreshToken) account.refreshToken = encrypt(account.refreshToken);
+		if (verification) {
+			account.status = verification.status;
+			account.lastVerifiedAt = verification.checkedAt;
+		}
 
 		return this.accountRepo.save(account);
 	}
@@ -84,6 +97,8 @@ export class CoinDCXDB {
 		delete meta.coindcxBaseUrl;
 
 		account.accountMeta = meta;
+		account.status = TradingAccountStatus.PENDING;
+		account.lastVerifiedAt = null;
 
 		return this.accountRepo.save(account);
 	}
@@ -103,63 +118,23 @@ export class CoinDCXDB {
 	}
 
 	async markJobSuccess(job: TradeSignal, brokerOrderId?: string | null) {
-		if (!job?.status?.id) return;
+        if (!job?.status?.id) throw new Error("trade_signal_status_missing");
+        const closing = job.status.status === "in_progress_close";
+        await AppDataSource.transaction(async manager => {
+            if (brokerOrderId && closing) await manager.query(`UPDATE trade_signals SET broker_close_order_id=$2,updated_at=NOW() WHERE id=$1`, [job.id, String(brokerOrderId)]);
+            if (brokerOrderId && !closing) await manager.query(
+                `UPDATE trade_signals SET broker_order_id=$2, updated_at=NOW() WHERE id=$1`, [job.id, String(brokerOrderId)]);
+            await manager.query(`UPDATE trade_signals_status SET status=$2, last_error=NULL, updated_at=NOW() WHERE id=$1`, [job.status.id, closing ? "in_progress_close" : "submitted"]);
+        });
+    }
 
-		await this.tradeSignalRepo.manager.query(
-			`
-			UPDATE trade_signals_status
-			SET status = 'completed',
-				updated_at = NOW()
-			WHERE id = $1
-			`,
-			[job.status.id]
-		);
-
-		if (brokerOrderId) {
-			try {
-				await this.tradeSignalRepo.manager.query(
-					`
-					UPDATE trade_signals
-					SET broker_order_id = $2,
-						updated_at = NOW()
-					WHERE id = $1
-					`,
-					[job.id, brokerOrderId]
-				);
-			} catch {
-				// Ignore if broker_order_id column does not exist in current schema.
-			}
-		}
-	}
-
-	async markJobFailed(job: TradeSignal, error: string) {
-		if (!job?.status?.id) return;
-
-		await this.tradeSignalRepo.manager
-			.query(
-				`
-				UPDATE trade_signals_status
-				SET status = 'failed',
-					attempts = COALESCE(attempts, 0) + 1,
-					error = $2,
-					updated_at = NOW()
-				WHERE id = $1
-				`,
-				[job.status.id, error]
-			)
-			.catch(async () => {
-				await this.tradeSignalRepo.manager.query(
-					`
-					UPDATE trade_signals_status
-					SET status = 'failed',
-						attempts = COALESCE(attempts, 0) + 1,
-						updated_at = NOW()
-					WHERE id = $1
-					`,
-					[job.status.id]
-				);
-			});
-	}
+    async markJobFailed(job: TradeSignal, error: string | Error) {
+        if (!job?.status?.id) throw new Error("trade_signal_status_missing");
+        const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+        await this.tradeSignalRepo.manager.query(
+            `UPDATE trade_signals_status SET status='failed', attempts=COALESCE(attempts,0)+1, last_error=$2, next_retry_at=NULL, updated_at=NOW() WHERE id=$1`,
+            [job.status.id, detail]);
+    }
 
 	async claimPendingTrades(limit: number) {
 		const qr = AppDataSource.createQueryRunner();
@@ -173,10 +148,11 @@ export class CoinDCXDB {
 			const qb: any = statusRepo
 				.createQueryBuilder("s")
 				.select("s.tradeSignalId", "id")
+                .addSelect("s.status", "status")
 				.innerJoin("s.tradeSignal", "ts")
 				.innerJoin("ts.tradingAccount", "ta")
 				.innerJoin("ta.broker", "b")
-				.where("s.status = :status", { status: "pending" })
+				.where("s.status IN (:...statuses)", { statuses: ["pending", "pending_close"] })
 				.andWhere("(b.code = :code OR b.name = :name)", {
 					code: "COINDCX",
 					name: "CoinDCX",
@@ -189,7 +165,7 @@ export class CoinDCXDB {
 				qb.setOnLocked("skip_locked");
 			}
 
-			const rows: Array<{ id: any }> = await qb.getRawMany();
+			const rows: Array<{ id: any; status: string }> = await qb.getRawMany();
 			const ids = rows.map((r) => Number(r.id)).filter(Boolean);
 
 			if (!ids.length) {
@@ -201,7 +177,7 @@ export class CoinDCXDB {
 				.createQueryBuilder()
 				.update(TradeSignalStatus)
 				.set({
-					status: "in_progress",
+					status: () => "CASE WHEN status = 'pending_close' THEN 'in_progress_close' ELSE 'in_progress' END",
 					updatedAt: new Date(),
 				})
 				.where("tradeSignalId IN (:...ids)", { ids })
@@ -213,6 +189,7 @@ export class CoinDCXDB {
 				.leftJoinAndSelect("ts.tradingAccount", "ta")
 				.leftJoinAndSelect("ta.broker", "b")
 				.leftJoinAndSelect("ts.status", "tss")
+                .leftJoinAndSelect("ts.strategy", "strategy")
 				.where("ts.id IN (:...ids)", { ids })
 				.andWhere("(b.code = :code OR b.name = :name)", {
 					code: "COINDCX",

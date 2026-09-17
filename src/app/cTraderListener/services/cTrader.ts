@@ -1,3 +1,5 @@
+import { encrypt } from "../../../utils/crypto";
+import { TradeGuardService } from "../../trade/services/tradeGuard.service";
 import { CTradeSignalDB } from "./cTrader.db";
 import AppDataSource from "../../../db/data-source";
 import { UserTradingAccount } from "../../../entity/UserTradingAccount";
@@ -1203,6 +1205,7 @@ export class CTraderService {
     }[] = [];
 
     for (const t of trades as any[]) {
+      if (!(await new TradeGuardService().validateTrade(t.tradingAccount, t)).allowed) continue;
       //console.log("[CTRADER] Executing trade signal ID:", t.id);
       const execRes = await this.exectuteTradeSignalApiCall({ ...t, id: t.id });
       const closeRefId = execRes.positionId ?? execRes.orderId;
@@ -1341,8 +1344,8 @@ async completeOAuthAndVerifyByCTraderAccountId(
 
     await this.rebindAccountToActiveSubscription(qr, acc, broker);
 
-    acc.accessToken = tokens.accessToken;
-    acc.refreshToken = tokens.refreshToken ?? acc.refreshToken ?? "";
+    acc.accessToken = encrypt(tokens.accessToken);
+    acc.refreshToken = encrypt(tokens.refreshToken ?? acc.refreshToken ?? "");
     acc.status = TradingAccountStatus.VERIFIED;
     acc.lastVerifiedAt = new Date();
 

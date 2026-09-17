@@ -23,6 +23,7 @@ export enum TradingAccountStatus {
   PENDING = "pending",
   VERIFIED = "verified",
   BLOCKED = "blocked",
+  HALTED = "halted",
 }
 
 

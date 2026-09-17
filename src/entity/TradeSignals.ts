@@ -28,6 +28,13 @@ export class TradeSignal {
   @PrimaryGeneratedColumn()
   id!: number;
 
+  @Column({ name: "execution_state", type: "text", nullable: true }) executionState!: string | null;
+  @Column({ name: "broker_close_order_id", type: "text", nullable: true }) brokerCloseOrderId!: string | null;
+  @Column({ name: "protection_state", type: "text", nullable: true }) protectionState!: string | null;
+  @Column({ name: "protection_detail", type: "jsonb", nullable: true }) protectionDetail!: Record<string, any> | null;
+  @Column({ name: "master_trading_account_id", type: "bigint", nullable: true })
+  masterTradingAccountId!: number | null;
+
   @Column({ type: "varchar", length: 10 })
   action!: string;
 
@@ -80,7 +87,7 @@ export class TradeSignal {
   @Column({ name: "signal_time", type: "timestamptz" })
   signalTime!: Date;
 
-  @Column({name: "volume", type: "numeric", precision: 20, scale: 2})
+  @Column({name: "volume", type: "numeric", precision: 28, scale: 8})
   volume!: number;
 
   @Column({ name: "order_id", type: "bigint", nullable: true })
@@ -173,10 +180,10 @@ export class TradeSignal {
   })
   trailingStopLossDistance!: number | null;
 
-  @Column({ name: "broker_order_id", type: "bigint", nullable: true })
+  @Column({ name: "broker_order_id", type: "text", nullable: true })
   brokerOrderId!: string | null;
 
-  @Column({ name: "broker_position_id", type: "bigint", nullable: true })
+  @Column({ name: "broker_position_id", type: "text", nullable: true })
   brokerPositionId!: string | null;
 
   @Column({ name: "admin_strategy_trade_id", type: "bigint", nullable: true })
@@ -206,6 +213,9 @@ export class TradeSignal {
   @ManyToOne(() => UserSubscription, { onDelete: "SET NULL", nullable: true })
   @JoinColumn({ name: "subscription_id" })
   subscription!: UserSubscription | null;
+
+  @Column({ name: "risk_reserved_at", type: "timestamptz", nullable: true })
+  riskReservedAt!: Date | null;
 
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;

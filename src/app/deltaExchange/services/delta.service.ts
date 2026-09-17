@@ -1,3 +1,5 @@
+import { decryptCredentials } from "../../../utils/crypto";
+import { TradeGuardService } from "../../trade/services/tradeGuard.service";
 import crypto from "crypto";
 import { DeltaDB } from "./delta.db";
 import {
@@ -90,7 +92,7 @@ export class DeltaService {
 	}
 
 	private getCredentials(account: any): DeltaCredentials {
-		const meta = account?.accountMeta ?? {};
+		const meta = decryptCredentials(account?.accountMeta ?? {});
 		const deltaMeta = meta.delta ?? {};
 
 		const apiKey =
@@ -856,6 +858,7 @@ export class DeltaService {
 		}[] = [];
 
 		for (const trade of trades) {
+            if (!(await new TradeGuardService().validateTrade((trade as any).tradingAccount, trade)).allowed) continue;
 			try {
 				if (!(trade as any).tradingAccount) {
 					updates.push({

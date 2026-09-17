@@ -351,6 +351,7 @@ export class UserService {
   private mapRiskLimits(riskLimits: UserRiskLimits): UserSettingsRiskLimits {
     return {
       isEnabled: riskLimits.isEnabled,
+      ...(riskLimits.configuration !== undefined ? { configuration: riskLimits.configuration } : {}),
       dailyLossLimit:
         riskLimits.dailyLossLimit !== null
           ? Number(riskLimits.dailyLossLimit)
@@ -718,6 +719,7 @@ export class UserService {
       dailyProfitTarget?: number | null;
       maxTradesPerDay?: number | null;
       cooldownAfterLossMins?: number | null;
+      configuration?: Record<string, any>;
     }
   ): Promise<UserSettingsRiskLimits> {
     try {

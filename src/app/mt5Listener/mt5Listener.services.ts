@@ -1,3 +1,4 @@
+import { TradeGuardService } from "../trade/services/tradeGuard.service";
 import { Mt5BrokerRefs, Mt5ListenerDBServices } from "./mt5Listener.db";
 import { DistanceMappingService } from "../trade/services/distanceMapping.service";
 
@@ -111,6 +112,8 @@ export class Mt5ListenerServices {
 
         return closePayload;
       }
+
+      if (!(await new TradeGuardService().validateTrade(job.tradingAccount, job)).allowed) return {};
 
       if (Number(job.volume) <= 0) {
         await this.dbService.markJobFailed(

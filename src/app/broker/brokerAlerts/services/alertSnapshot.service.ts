@@ -1,3 +1,4 @@
+import { CoinDCXService } from "../../../coindcx/services/coindcx.service";
 import AppDataSource from "../../../../db/data-source";
 import { HttpStatusCode } from "../../../../types/constants";
 import { AssetClassifier, AssetType, MarketType } from "../../../../types/trade-identify";
@@ -57,8 +58,16 @@ export class AlertSnapshotService {
   }
 
 private normalizeSimplifiedLuxAlert<T extends Partial<ICreateAlertSnapshot>>(payload: T): T {
+  const raw = payload as T & { symbol?: string; sl?: number; tp?: number };
+  const isCompactSignal = !payload.ticker && Boolean(raw.symbol);
+  payload = {
+    ...payload,
+    ...(isCompactSignal ? { ticker: raw.symbol } : {}),
+    ...(payload.stopLoss == null && raw.sl != null ? { stopLoss: raw.sl } : {}),
+    ...(payload.takeProfit == null && raw.tp != null ? { takeProfit: raw.tp } : {}),
+  };
   const strategy = String((payload as any).strategy ?? "").trim().toUpperCase();
-  const isSimpleLux = strategy.includes("LUX") || (payload as any).lots !== undefined;
+  const isSimpleLux = isCompactSignal || strategy.includes("LUX") || (payload as any).lots !== undefined;
 
   if (!isSimpleLux) return payload;
 
@@ -111,7 +120,7 @@ private normalizeSimplifiedLuxAlert<T extends Partial<ICreateAlertSnapshot>>(pay
     entryRef:
       payload.entryRef ??
       `lux-${ticker || "unknown"}-${action || "signal"}-${now.getTime()}`.slice(0, 100),
-    orderType: payload.orderType ?? "MARKET",
+    orderType: payload.orderType ?? (isCompactSignal && payload.limitPrice != null ? "LIMIT" : "MARKET"),
   } as T;
 }
 
@@ -1075,7 +1084,16 @@ private getExecutionBrokerCodes(payload: Partial<ICreateAlertSnapshot>) {
     };
   }
 
+  private isCoinDCXClose(payload: any): boolean {
+    return String(payload.action ?? "").toUpperCase() === "CLOSE" &&
+      (["CRYPTO", "CRYPTOCURRENCY"].includes(String(payload.market ?? "").toUpperCase()) || String(payload.exchange ?? "").toUpperCase() === "COINDCX" || /^BM?-/.test(String(payload.symbol ?? payload.ticker ?? "").toUpperCase()));
+  }
+
   async create(payload: ICreateAlertSnapshot) {
+    if (this.isCoinDCXClose(payload)) return new CoinDCXService().queueCloseAlert({
+      userId: Number(payload.userId), subscriptionId: payload.subscriptionId ? Number(payload.subscriptionId) : undefined,
+      symbol: String((payload as any).symbol ?? payload.ticker ?? ""), entryRef: payload.entryRef ?? undefined,
+    });
     const queryRunner = AppDataSource.createQueryRunner();
 
     await queryRunner.connect();
@@ -1251,6 +1269,9 @@ private getExecutionBrokerCodes(payload: Partial<ICreateAlertSnapshot>) {
   }
 
   async createForPlan(planId: number, payload: ICreateStrategyManagedAlert) {
+    if (this.isCoinDCXClose(payload)) return new CoinDCXService().queueCloseAlert({
+      planId, symbol: String((payload as any).symbol ?? payload.ticker ?? ""), entryRef: payload.entryRef ?? undefined,
+    });
     const queryRunner = AppDataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();

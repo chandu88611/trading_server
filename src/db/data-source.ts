@@ -1,3 +1,6 @@
+import { MasterFollowerLink } from "../entity/MasterFollowerLink";
+import { AdminStrategyTradeScheduleSetting } from "../entity/AdminStrategyTradeScheduleSetting";
+import { TradeFill } from "../entity/TradeFill";
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import dotenv from "dotenv";
@@ -16,7 +19,6 @@ import {
   ReferralRewardCredit,
   WithdrawalRequest,
   WithdrawalSetting,
-  AdminStrategyTradeScheduleSetting,
   AdminStrategyTrade,
   CrmSyncOutbox,
   SupportTicket,
@@ -61,6 +63,8 @@ export const AppDataSource = new DataSource({
   synchronize: false,
   logging: false,
   entities: [
+    MasterFollowerLink,
+    TradeFill,
     User,
     AuthProvider,
     RefreshToken,

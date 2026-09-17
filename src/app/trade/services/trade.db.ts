@@ -34,7 +34,7 @@ export class TradeDBService {
           if (status) {
             qb.where("tss.status = :status", { status })
           } else {
-            qb.where("tss.status IN (:...statuses)", { statuses: ["pending", "in_progress", "completed", "failed"] })
+            qb.where("tss.status IN (:...statuses)", { statuses: ["pending", "in_progress", "submitted", "partially_filled", "completed", "failed"] })
           }
         }))
         .orderBy("ts.createdAt", "DESC")

@@ -1,3 +1,13 @@
+import { decrypt } from "../../utils/crypto";
+import { beforeEach, afterEach, mock } from "node:test";
+import { TradeGuardService } from "../../app/trade/services/tradeGuard.service";
+const originalEncryptionKey = process.env.ENCRYPTION_KEY;
+beforeEach(() => { process.env.ENCRYPTION_KEY = "ab".repeat(32); mock.method(TradeGuardService.prototype, "validateTrade", async () => ({ allowed: true })); });
+afterEach(() => {
+  mock.restoreAll();
+  if (originalEncryptionKey === undefined) delete process.env.ENCRYPTION_KEY;
+  else process.env.ENCRYPTION_KEY = originalEncryptionKey;
+});
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -186,8 +196,9 @@ test("cTrader: OAuth completion rebinds existing account to active market subscr
 
       assert.equal(result.ok, true);
       assert.equal(harness.savedAccount.subscriptionId, 30);
-      assert.equal(harness.savedAccount.accessToken, "new-access");
-      assert.equal(harness.savedAccount.refreshToken, "new-refresh");
+      assert.notEqual(harness.savedAccount.accessToken, "new-access");
+      assert.equal(decrypt(harness.savedAccount.accessToken), "new-access");
+      assert.equal(decrypt(harness.savedAccount.refreshToken), "new-refresh");
       assert.equal(harness.savedAccount.status, "verified");
       assert.equal(harness.committed, true);
       assert.equal(harness.rolledBack, false);

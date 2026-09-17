@@ -61,6 +61,9 @@ export class UserTradingAccount {
   @Column({ name: "account_meta", type: "jsonb", nullable: true })
   accountMeta!: Record<string, any> | null;
 
+  @Column({ name: "risk_metrics", type: "jsonb", nullable: true, select: false })
+  riskMetrics!: Record<string, any> | null;
+
   @Column({ name: "credentials_encrypted", type: "text" })
   credentialsEncrypted!: string;
 

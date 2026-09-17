@@ -220,6 +220,8 @@ export class UserDBService {
       );
     `);
 
+    await AppDataSource.query(`ALTER TABLE user_risk_limits ADD COLUMN IF NOT EXISTS configuration JSONB NOT NULL DEFAULT '{}'::jsonb`);
+
     await AppDataSource.query(`
       CREATE TABLE IF NOT EXISTS admin_strategy_trade_schedule_settings (
         id INT PRIMARY KEY,
@@ -845,6 +847,7 @@ export class UserDBService {
       dailyProfitTarget?: number | null;
       maxTradesPerDay?: number | null;
       cooldownAfterLossMins?: number | null;
+      configuration?: Record<string, any>;
     }
   ): Promise<UserRiskLimits> {
     try {
@@ -877,6 +880,7 @@ export class UserDBService {
         }
       }
 
+      if (payload.configuration !== undefined) riskLimits.configuration = payload.configuration;
       return this.riskLimitsRepo.save(riskLimits);
     } catch (error) {
       throw error;

@@ -1,6 +1,11 @@
+import { CoinDCXMarketService, prepareOrder, quantizePrice, spotExitQuantity } from "./coindcxMarket.service";
+import { decrypt } from "../../../utils/crypto";
+import AppDataSource from "../../../db/data-source";
+import { TradeGuardService, isExitSignal } from "../../trade/services/tradeGuard.service";
 import axios, { AxiosRequestConfig } from "axios";
 import crypto from "crypto";
 import { CoinDCXDB } from "./coindcx.db";
+import { TradingAccountStatus } from "../../subscriptionPlan/enums/subscriberPlan.enum";
 import {
 	CoinDCXAuthPayload,
 	CoinDCXBatchRequest,
@@ -20,6 +25,9 @@ import {
 	CoinDCXFuturesPositionsRequest,
 	CoinDCXFuturesTPSLOrder,
 } from "../interfaces/coindcx";
+
+type PreparedOrder = { quantity: number; price: number; stopLoss?: number | null; takeProfit?: number | null };
+type OnPrepared = (order: PreparedOrder) => Promise<void>;
 
 type CoinDCXCredentials = {
 	apiKey: string;
@@ -42,6 +50,8 @@ export class CoinDCXService {
 
 	private readonly defaultBaseUrl =
 		process.env.COINDCX_BASE_URL || "https://api.coindcx.com";
+
+	private readonly markets = new CoinDCXMarketService((path, query) => this.publicGet(path, query), this.defaultBaseUrl);
 
 	private readonly requestTimeout = Number(process.env.COINDCX_TIMEOUT_MS || 15000);
 
@@ -74,7 +84,7 @@ export class CoinDCXService {
 				connectedAt: now,
 				verifiedAt: null,
 			},
-		});
+		}, { status: TradingAccountStatus.PENDING, checkedAt: null });
 
 		return {
 			tradingAccountId: payload.tradingAccountId,
@@ -140,7 +150,7 @@ export class CoinDCXService {
 					...this.getCoinDCXMeta(account!),
 					verifiedAt: checkedAt,
 				},
-			});
+			}, { status: TradingAccountStatus.VERIFIED, checkedAt: new Date(checkedAt) });
 
 			return {
 				valid: true,
@@ -179,7 +189,7 @@ export class CoinDCXService {
 	}
 
 	// Existing CoinDCX Spot order flow.
-	async placeOrder(request: CoinDCXPlaceOrderRequest) {
+	async placeOrder(request: CoinDCXPlaceOrderRequest, onPrepared?: OnPrepared) {
 		const account = await this.db.getTradingAccountById(
 			request.userId,
 			request.tradingAccountId
@@ -191,6 +201,25 @@ export class CoinDCXService {
 
 		const credentials = this.requireCredentials(account!);
 		const order = this.normalizeOrder(request.order);
+        const rules = await this.markets.spot(this.normalizeMarket(order.symbol));
+        const marketOrder = this.normalizeOrderType(order.orderType) === "market_order";
+        const ticker: any = marketOrder ? await this.getPublicTicker({ market: order.symbol }) : null;
+        const quote = Array.isArray(ticker) ? ticker[0] : ticker;
+        const estimatedPrice = marketOrder ? Number(quote?.last_price) : Number(order.price);
+        if (!Number.isFinite(estimatedPrice) || estimatedPrice <= 0) this.throwError(400, "coindcx_price_unavailable");
+        if (order.side === "SELL") {
+            const balances = this.extractResponseArray(await this.privatePost(credentials, "/exchange/v1/users/balances", { timestamp: Date.now() }));
+            const asset = balances.find(row => String(row.currency).toUpperCase() === rules.baseAsset.toUpperCase());
+            // CoinDCX 'balance' is available; locked_balance is reported separately.
+            order.quantity = spotExitQuantity(order.quantity, Number(asset?.balance ?? 0), rules.quantityStep, rules.minQuantity);
+        }
+        const prepared = prepareOrder(order.quantity, estimatedPrice, rules, marketOrder);
+        order.quantity = prepared.quantity;
+        if (!marketOrder) order.price = prepared.price;
+        if (order.stopLoss) order.stopLoss = quantizePrice(order.stopLoss, rules.tickSize);
+        if (order.takeProfit) order.takeProfit = quantizePrice(order.takeProfit, rules.tickSize);
+        await onPrepared?.({ ...prepared, stopLoss: order.stopLoss, takeProfit: order.takeProfit });
+
 
 		const body: Record<string, any> = {
 			side: order.side.toLowerCase(),
@@ -212,7 +241,7 @@ export class CoinDCXService {
 	}
 
 	// CoinDCX Futures/perpetual order flow.
-	async placeFuturesOrder(request: CoinDCXFuturesPlaceOrderRequest) {
+	async placeFuturesOrder(request: CoinDCXFuturesPlaceOrderRequest, onPrepared?: OnPrepared) {
 		const account = await this.db.getTradingAccountById(
 			request.userId,
 			request.tradingAccountId
@@ -237,20 +266,25 @@ export class CoinDCXService {
 			this.throwError(400, "futures_symbol_required");
 		}
 
-		const leverage = Number(order.leverage);
+		const leverage = Number(order.leverage ?? account.accountMeta?.coindcx?.leverage ?? 2);
 
-		if (!Number.isFinite(leverage) || leverage <= 0) {
+		if (!Number.isFinite(leverage) || leverage < 1) {
 			this.throwError(400, "valid_leverage_required");
 		}
 
-		const marginAmount = Number(
+		const configuredMargin = Number(
 			order.marginAmount ??
 				order.margin_amount ??
 				order.margin ??
 				order.capital
 		);
 
-		if (!Number.isFinite(marginAmount) || marginAmount <= 0) {
+		const quantityOrder = order.marginAmount == null && order.margin_amount == null && order.margin == null && order.capital == null;
+		const requestedQuantity = Number(order.quantity);
+		if (quantityOrder && (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0)) {
+			this.throwError(400, "invalid_quantity");
+		}
+		if (!quantityOrder && (!Number.isFinite(configuredMargin) || configuredMargin <= 0)) {
 			this.throwError(400, "valid_margin_amount_required");
 		}
 
@@ -300,10 +334,8 @@ export class CoinDCXService {
 
 		if (requestedMarginCurrency === "USDT") {
 			addCurrencyAttempt("USDT");
-			addCurrencyAttempt("INR");
 		} else if (requestedMarginCurrency === "INR") {
 			addCurrencyAttempt("INR");
-			addCurrencyAttempt("USDT");
 		} else {
 			addCurrencyAttempt("INR");
 			addCurrencyAttempt("USDT");
@@ -334,6 +366,7 @@ export class CoinDCXService {
 
 		for (let index = 0; index < marginCurrencyAttempts.length; index++) {
 			const marginCurrency = marginCurrencyAttempts[index];
+			let marginAmount = configuredMargin;
 
 			const availableBalance =
 				marginCurrency === "INR"
@@ -343,7 +376,7 @@ export class CoinDCXService {
 			const positionMarginType =
 				marginCurrency === "INR" ? "isolated" : requestedPositionMarginType;
 
-			if (marginAmount > availableBalance) {
+			if (!quantityOrder && marginAmount > availableBalance) {
 				failedAttempts.push({
 					marginCurrency,
 					positionMarginType,
@@ -362,6 +395,11 @@ export class CoinDCXService {
 				marginCurrency,
 			});
 
+			if (quantityOrder) {
+				marginAmount = requestedQuantity * pricing.entryPrice / leverage * (marginCurrency === "INR" ? pricing.usdtInrRate : 1);
+				if (!Number.isFinite(marginAmount) || marginAmount <= 0) this.throwError(400, "valid_margin_amount_required");
+				if (marginAmount > availableBalance) continue;
+			}
 			const quantityInfo = this.calculateFuturesQuantity({
 				marginAmount,
 				leverage,
@@ -369,53 +407,23 @@ export class CoinDCXService {
 				marginCurrency,
 				usdtInrRate: pricing.usdtInrRate,
 			});
-
-			if (!Number.isFinite(quantityInfo.quantity) || quantityInfo.quantity <= 0) {
-				this.throwError(400, "invalid_calculated_quantity");
+			if (quantityOrder) {
+				// Preserve the signal's executed quantity instead of interpreting it as margin.
+				quantityInfo.quantity = requestedQuantity;
+				quantityInfo.rawQuantity = requestedQuantity;
 			}
 
-			const minQuantity = Number(process.env.COINDCX_FUTURES_MIN_QTY || 0.001);
-
-			if (!Number.isFinite(minQuantity) || minQuantity <= 0) {
-				this.throwError(500, "invalid_min_quantity_config");
-			}
-
-			if (quantityInfo.quantity < minQuantity) {
-				const requiredMargin = this.calculateRequiredMarginForMinQuantity({
-					minQuantity,
-					entryPrice: pricing.entryPrice,
-					leverage,
-					marginCurrency,
-					usdtInrRate: pricing.usdtInrRate,
-				});
-
-				this.throwError(
-					400,
-					JSON.stringify({
-						message: "minimum_quantity_not_met",
-						minQuantity,
-						quantityStep: Number(process.env.COINDCX_FUTURES_QTY_STEP || 0.001),
-						calculatedQuantity: quantityInfo.quantity,
-						rawQuantity: quantityInfo.rawQuantity,
-						marginAmount,
-						leverage,
-						requiredMargin,
-						suggestion: `Use marginAmount >= ${requiredMargin} or increase leverage.`,
-					})
-				);
-			}
+            const rules = await this.markets.futures(pair, marginCurrency);
+            const prepared = prepareOrder(quantityInfo.rawQuantity, pricing.entryPrice, rules, orderType === "market_order");
+            quantityInfo.quantity = prepared.quantity;
+            if (orderType !== "market_order") pricing.entryPrice = prepared.price;
+            const protectionPrice = (value: any) => value == null ? undefined : quantizePrice(Number(value), rules.tickSize);
 
 			const tpsl = this.calculateFuturesTPSL({
 				side,
 				entryPrice: pricing.entryPrice,
-				stopLossPrice:
-					order.stopLossPrice ??
-					order.stop_loss_price ??
-					order.stopLoss,
-				takeProfitPrice:
-					order.takeProfitPrice ??
-					order.take_profit_price ??
-					order.takeProfit,
+                stopLossPrice: protectionPrice(order.stopLossPrice ?? order.stop_loss_price ?? order.stopLoss),
+                takeProfitPrice: protectionPrice(order.takeProfitPrice ?? order.take_profit_price ?? order.takeProfit),
 				stopLossPercent:
 					order.stopLossPercent ??
 					order.stop_loss_percent ??
@@ -425,6 +433,18 @@ export class CoinDCXService {
 					order.take_profit_percent ??
 					order.tpPercent,
 			});
+
+            if (tpsl.stopLossPrice) tpsl.stopLossPrice = quantizePrice(tpsl.stopLossPrice, rules.tickSize);
+            if (tpsl.takeProfitPrice) tpsl.takeProfitPrice = quantizePrice(tpsl.takeProfitPrice, rules.tickSize);
+            // Recheck directional validity after rounding percentage-based protection.
+            this.calculateFuturesTPSL({ side, entryPrice: pricing.entryPrice, stopLossPrice: tpsl.stopLossPrice, takeProfitPrice: tpsl.takeProfitPrice });
+            await onPrepared?.({ ...prepared, stopLoss: tpsl.stopLossPrice, takeProfit: tpsl.takeProfitPrice });
+            // Current CoinDCX contract calls this update_leverage (not change_leverage).
+            const leverageResult = await this.privatePost(credentials, "/exchange/v1/derivatives/futures/positions/update_leverage", {
+                timestamp: Date.now(), pair, leverage: String(leverage), margin_currency_short_name: marginCurrency,
+            });
+            if (leverageResult?.success === false || Number(leverageResult?.code ?? leverageResult?.status ?? 200) >= 400) this.throwError(400, "coindcx_leverage_update_failed");
+            console.info("[COINDCX] leverage applied", { pair, marginCurrency, leverage });
 
 			const body: Record<string, any> = {
 				timestamp: Date.now(),
@@ -455,13 +475,7 @@ export class CoinDCXService {
 				body.order.price = pricing.entryPrice;
 			}
 
-			if (tpsl.takeProfitPrice) {
-				body.order.take_profit_price = tpsl.takeProfitPrice;
-			}
-
-			if (tpsl.stopLossPrice) {
-				body.order.stop_loss_price = tpsl.stopLossPrice;
-			}
+            // Protection is attached through create_tpsl after confirmed fills.
 
 			console.log(
 				"Final CoinDCX futures order body:",
@@ -609,6 +623,80 @@ export class CoinDCXService {
 		);
 	}
 
+  async getAllFuturesPositions(request: CoinDCXFuturesPositionsRequest): Promise<any[]> {
+    const positions: any[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const rows = this.extractResponseArray(await this.getFuturesPositions({ ...request, page, size:100 }));
+      positions.push(...rows);
+      if (rows.length < 100) return positions;
+    }
+    throw new Error("coindcx_positions_pagination_incomplete");
+  }
+
+  async getStreamCredentials(userId: number, tradingAccountId: number) {
+    const account = await this.db.getTradingAccountById(userId,tradingAccountId);
+    if (!account) throw new Error("trading_account_not_found");
+    return this.requireCredentials(account);
+  }
+
+  async protectFilledFutures(account: any, signal: any) {
+    if (signal.execution_state !== "FILLED" || account.accountMeta?.emergencyHalt) return;
+    if (!signal.stop_loss && !signal.take_profit) return;
+    if (signal.protection_state === "ACTIVE") return;
+    const positions = await this.getAllFuturesPositions({ userId:Number(account.userId), tradingAccountId:Number(account.id) });
+    const matches = positions.filter(p => p.pair === this.normalizeFuturesPair(signal.symbol) && Number(p.active_pos) !== 0 && (Number(p.active_pos)>0) === (String(signal.action).toUpperCase()==="BUY"));
+    if (matches.length !== 1) throw new Error("futures_position_not_uniquely_identified");
+    const position = matches[0];
+    const [conflict] = await AppDataSource.query(`SELECT id FROM trade_signals WHERE trading_account_id=$1 AND broker_position_id=$2 AND id<>$3 AND protection_state='ACTIVE' AND (stop_loss IS DISTINCT FROM $4::numeric OR take_profit IS DISTINCT FROM $5::numeric) LIMIT 1`, [account.id,String(position.id),signal.id,signal.stop_loss,signal.take_profit]);
+    if (conflict) throw new Error("position_protection_conflicts_with_existing_signal");
+    const matchesTriggers = (!signal.stop_loss || Number(position.stop_loss_trigger)===Number(signal.stop_loss)) && (!signal.take_profit || Number(position.take_profit_trigger)===Number(signal.take_profit));
+    if (!matchesTriggers) {
+      await AppDataSource.query(`UPDATE trade_signals SET protection_state='PENDING',broker_position_id=$2 WHERE id=$1`, [signal.id,String(position.id)]);
+      const response: any = await this.createFuturesTPSL({ userId:Number(account.userId),tradingAccountId:Number(account.id),positionId:String(position.id),stopLoss:signal.stop_loss == null ? undefined : Number(signal.stop_loss),takeProfit:signal.take_profit == null ? undefined : Number(signal.take_profit) });
+      const bracketOrderIds: string[] = [];
+      for (const leg of [signal.stop_loss ? "stop_loss" : null,signal.take_profit ? "take_profit" : null].filter(Boolean) as string[]) {
+        if (!response?.[leg]?.id || response[leg].success === false) throw new Error("futures_protection_not_confirmed");
+        bracketOrderIds.push(String(response[leg].id));
+      }
+      await AppDataSource.query(`UPDATE trade_signals SET protection_detail=COALESCE(protection_detail,'{}'::jsonb)||jsonb_build_object('bracketOrderIds',$2::jsonb) WHERE id=$1`, [signal.id,JSON.stringify(bracketOrderIds)]);
+    }
+    await AppDataSource.query(`UPDATE trade_signals SET protection_state='ACTIVE',broker_position_id=$2,protection_detail=COALESCE(protection_detail,'{}'::jsonb)||jsonb_build_object('confirmedAt',now()) WHERE id=$1`, [signal.id,String(position.id)]);
+  }
+
+  async queueCloseAlert(input: { userId?: number; planId?: number; subscriptionId?: number; symbol: string; entryRef?: string }) {
+    if ((!input.userId && !input.planId) || !input.symbol) this.throwError(400, "coindcx_close_scope_required");
+    const symbol = /^BM?-/.test(input.symbol.toUpperCase()) ? this.normalizeFuturesPair(input.symbol) : this.normalizeMarket(input.symbol);
+    const rows = await AppDataSource.query(`WITH queued AS (
+      UPDATE trade_signals_status s SET status='pending_close',last_error=NULL,next_retry_at=NULL,updated_at=now()
+      FROM trade_signals t JOIN user_trading_accounts a ON a.id=t.trading_account_id JOIN brokers b ON b.id=a.broker_id
+      WHERE s.signal_id=t.id AND b.code='COINDCX' AND UPPER(t.symbol)=UPPER($1)
+        AND ($2::bigint IS NULL OR a.user_id=$2) AND ($3::bigint IS NULL OR a.subscription_id=$3)
+        AND ($4::bigint IS NULL OR EXISTS (SELECT 1 FROM user_subscriptions sub WHERE sub.id=a.subscription_id AND sub.plan_id=$4))
+        AND ($5::text IS NULL OR t.entry_ref=$5) AND t.execution_state='FILLED' AND s.status='completed'
+      RETURNING t.id
+    ) UPDATE trade_signals t SET protection_detail=COALESCE(protection_detail,'{}'::jsonb)||jsonb_build_object('closeSource','TRADINGVIEW','closeRequestedAt',now())
+      FROM queued WHERE t.id=queued.id RETURNING t.id`, [symbol,input.userId ?? null,input.subscriptionId ?? null,input.planId ?? null,input.entryRef ?? null]);
+    // An already queued/closed alert is idempotent; never create an opposite entry.
+    const queued = Array.isArray(rows[0]) ? rows[0] : rows;
+    return { snapshotId: null, signalCount: queued.length, recipientCount: queued.length ? 1 : 0 };
+  }
+
+  /** Observe explicit flat positions; a missing page/position is never proof of closure. */
+  async cleanupClosedProtection(account: any) {
+    const signals = await AppDataSource.query(`SELECT t.id,t.broker_position_id FROM trade_signals t WHERE t.trading_account_id=$1 AND t.broker_position_id IS NOT NULL AND COALESCE(t.protection_state,'')<>'CLEANED'`, [account.id]);
+    if (!signals.length) return;
+    const positions = await this.getAllFuturesPositions({ userId:Number(account.userId), tradingAccountId:Number(account.id) });
+    for (const positionId of new Set<string>(signals.map((s: any) => String(s.broker_position_id)))) {
+      const position = positions.find(p => String(p.id) === positionId);
+      if (!position || position.active_pos == null || Number(position.active_pos) !== 0) continue;
+      await this.cancelFuturesOpenOrdersForPosition({ userId:Number(account.userId),tradingAccountId:Number(account.id),positionId });
+      await AppDataSource.transaction(async manager => {
+        await manager.query(`UPDATE trade_signals SET protection_state='CLEANED',protection_detail=COALESCE(protection_detail,'{}'::jsonb)||jsonb_build_object('positionFlatAt',now()),updated_at=now() WHERE trading_account_id=$1 AND broker_position_id=$2`, [account.id,positionId]);
+        await manager.query(`UPDATE trade_signals_status s SET status='closed',updated_at=now() FROM trade_signals t WHERE s.signal_id=t.id AND t.trading_account_id=$1 AND t.broker_position_id=$2 AND s.status IN ('completed','pending_close','in_progress_close')`, [account.id,positionId]);
+      });
+    }
+  }
+
 	async createFuturesTPSL(request: CoinDCXFuturesCreateTPSLRequest) {
 		const account = await this.db.getTradingAccountById(
 			request.userId,
@@ -634,6 +722,10 @@ export class CoinDCXService {
 			id: request.positionId,
 		};
 
+        const positions = await this.getAllFuturesPositions({ userId:request.userId,tradingAccountId:request.tradingAccountId });
+        const position = positions.find(p => String(p.id) === String(request.positionId));
+        if (!position?.pair || !Number(position.active_pos)) this.throwError(400, "futures_active_position_required");
+        const rules = await this.markets.futures(position.pair, position.margin_currency_short_name ?? "USDT");
 		if (request.takeProfit) {
 			body.take_profit = this.normalizeTakeProfit(request.takeProfit);
 		}
@@ -642,6 +734,10 @@ export class CoinDCXService {
 			body.stop_loss = this.normalizeStopLoss(request.stopLoss);
 		}
 
+        for (const leg of [body.take_profit, body.stop_loss].filter(Boolean)) {
+            leg.stop_price = quantizePrice(leg.stop_price, rules.tickSize);
+            if (leg.limit_price != null) leg.limit_price = quantizePrice(leg.limit_price, rules.tickSize);
+        }
 		return this.privatePost(
 			credentials,
 			"/exchange/v1/derivatives/futures/positions/create_tpsl",
@@ -664,6 +760,8 @@ export class CoinDCXService {
 		}
 
 		const credentials = this.requireCredentials(account!);
+
+        await this.cancelFuturesOpenOrdersForPosition(request);
 
 		return this.privatePost(
 			credentials,
@@ -693,7 +791,7 @@ export class CoinDCXService {
 
 		const credentials = this.requireCredentials(account!);
 
-		return this.privatePost(
+		const result = await this.privatePost(
 			credentials,
 			"/exchange/v1/derivatives/futures/positions/cancel_all_open_orders_for_position",
 			{
@@ -701,6 +799,8 @@ export class CoinDCXService {
 				id: request.positionId,
 			}
 		);
+        if (result?.success === false || Number(result?.code ?? result?.status ?? 200) >= 400) this.throwError(400, "coindcx_bracket_cancellation_failed");
+        return result;
 	}
 
 	async getFuturesInstruments(request: CoinDCXFuturesInstrumentRequest) {
@@ -885,16 +985,57 @@ export class CoinDCXService {
 				if (!tradingAccount?.userId || !tradingAccount?.id) {
 					this.throwError(400, "trade_signal_missing_trading_account");
 				}
+				if (![tradingAccount.broker?.code, tradingAccount.broker?.name]
+					.some((value) => String(value ?? "").toUpperCase() === "COINDCX")) {
+					this.throwError(400, "trade_signal_broker_not_coindcx");
+				}
 
-				const order = this.buildOrderFromTradeSignal(job);
+                if (!(await new TradeGuardService().validateTrade(tradingAccount, job)).allowed) {
+                    result.failed += 1;
+                    result.items.push({ id: job.id, status: "REJECTED_RISK_LIMIT" });
+                    continue;
+                }
+                const closing = isExitSignal(job);
+                const futures = String(job.instrumentType ?? "").toUpperCase() === "FUTURES" || /^BM?-/.test(String(job.symbol ?? "").toUpperCase());
+                if (closing && futures && !job.brokerPositionId) {
+                    const positions = await this.getAllFuturesPositions({ userId:Number(tradingAccount.userId),tradingAccountId:Number(tradingAccount.id) });
+                    const matches = positions.filter(p => p.pair === this.normalizeFuturesPair(job.symbol) && Number(p.active_pos) !== 0 && (Number(p.active_pos)>0) === (String(job.action).toUpperCase()==="BUY"));
+                    if (matches.length !== 1) this.throwError(400, "futures_close_position_not_uniquely_identified");
+                    job.brokerPositionId = String(matches[0].id);
+                    await AppDataSource.query(`UPDATE trade_signals SET broker_position_id=$2 WHERE id=$1`, [job.id,job.brokerPositionId]);
+                }
+                if (closing && job.brokerPositionId) {
+                    const exitResult = await this.exitFuturesPosition({ userId: Number(tradingAccount.userId), tradingAccountId: Number(tradingAccount.id), positionId: String(job.brokerPositionId) });
+                    await this.db.markJobSuccess(job, this.extractBrokerOrderId(exitResult));
+                    result.completed += 1;
+                    result.items.push({ id: job.id, status: "closed" });
+                    continue;
+                }
+                // Shared spot close jobs retain the original entry side and volume.
+                if (closing && futures) this.throwError(400, "futures_close_requires_position_id");
+                if (closing && (!job.brokerOrderId || String(job.action).toUpperCase() !== "BUY")) {
+                    this.throwError(400, "spot_close_requires_confirmed_buy_entry");
+                }
+                const order = this.buildOrderFromTradeSignal(closing ? { ...job, action: "SELL", orderType: "market_order", limitPrice: null } : job);
+                if (closing) order.clientOrderId = `trade_signal_close_${job.id}`;
 
-				const orderResult: any = await this.placeOrder({
+				const request = {
 					userId: Number(tradingAccount.userId),
 					tradingAccountId: Number(tradingAccount.id),
 					order,
-				});
+				};
+                const onPrepared: OnPrepared = async prepared => {
+                    if (closing) {
+                        await AppDataSource.query(`UPDATE trade_signals SET protection_detail=COALESCE(protection_detail,'{}'::jsonb)||jsonb_build_object('closeQuantity',$2::numeric,'unsubmittedQuantity',GREATEST(volume-$2::numeric,0)),updated_at=now() WHERE id=$1`, [job.id, prepared.quantity]);
+                    } else {
+                        await AppDataSource.query(`UPDATE trade_signals SET volume=$2,limit_price=CASE WHEN limit_price IS NULL THEN NULL ELSE $3::numeric END,stop_loss=$4,take_profit=$5,protection_detail=COALESCE(protection_detail,'{}'::jsonb)||jsonb_build_object('requestedQuantity',$6::numeric),updated_at=now() WHERE id=$1`, [job.id,prepared.quantity,prepared.price,prepared.stopLoss ?? null,prepared.takeProfit ?? null,job.volume]);
+                    }
+                };
+				const orderResult: any = futures
+					? await this.placeFuturesOrder({ ...request, order: { ...order, leverage: Number(job.strategy?.defaultParams?.coindcx?.leverage ?? job.strategy?.defaultParams?.leverage ?? tradingAccount.accountMeta?.coindcx?.leverage ?? 2), marginCurrency: tradingAccount.accountMeta?.coindcx?.marginCurrency ?? "AUTO", positionMarginType: tradingAccount.accountMeta?.coindcx?.positionMarginType ?? "isolated" } as any }, onPrepared)
+					: await this.placeOrder(request, onPrepared);
 
-				const brokerOrderId = this.extractBrokerOrderId(orderResult);
+				const brokerOrderId = this.extractBrokerOrderId(futures ? orderResult.order : orderResult);
 
 				await this.db.markJobSuccess(job, brokerOrderId);
 
@@ -908,12 +1049,15 @@ export class CoinDCXService {
 			} catch (error: any) {
 				const message = this.getErrorMessage(error);
 
-				await this.db.markJobFailed(job as any, message);
+				console.error("[COINDCX] execution failed", { signalId: job.id, error });
+                const rejected = ["coindcx_below_min_notional", "coindcx_below_min_quantity", "coindcx_above_max_quantity"].includes(message);
+                if (rejected) await AppDataSource.query(`UPDATE trade_signals_status SET status=$2,last_error=$3,next_retry_at=NULL,updated_at=now() WHERE signal_id=$1`, [job.id,isExitSignal(job) ? "close_blocked" : "rejected",message]);
+                else await this.db.markJobFailed(job as any, error instanceof Error ? error : message);
 
 				result.failed += 1;
 				result.items.push({
 					id: (job as any)?.id,
-					status: "failed",
+					status: rejected ? "rejected" : "failed",
 					error: message,
 				});
 			}
@@ -953,6 +1097,36 @@ export class CoinDCXService {
 			market,
 		});
 	}
+
+  async getTradeHistory(userId: number, tradingAccountId: number, signals: any[] = []) {
+    const account = await this.db.getTradingAccountById(userId, tradingAccountId);
+    if (!account) this.throwError(404, "trading_account_not_found");
+    const credentials = this.requireCredentials(account);
+    const fills: any[] = [];
+    let fromId: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const rows = this.extractResponseArray(await this.privatePost(credentials, "/exchange/v1/orders/trade_history", { limit: 500, sort: "asc", ...(fromId ? { from_id: fromId } : {}) }));
+      fills.push(...rows);
+      if (rows.length < 500) break;
+      const next = String(rows[rows.length - 1].id);
+      if (next === fromId || page === 99) throw new Error("coindcx_history_pagination_incomplete");
+      fromId = next;
+    }
+    for (const signal of signals.filter(s => s.instrument_type === "FUTURES" || /^BM?-/.test(s.symbol))) {
+      for (const orderId of [...new Set([signal.broker_order_id,signal.broker_close_order_id,...(signal.protection_detail?.bracketOrderIds ?? [])].filter(Boolean))]) {
+        for (let page = 1; page <= 100; page++) {
+          const rows = this.extractResponseArray(await this.privatePost(credentials, "/exchange/v1/derivatives/futures/trades", {
+            pair: this.normalizeFuturesPair(signal.symbol), order_id: orderId,
+            from_date: new Date(signal.created_at).toISOString().slice(0,10), to_date: new Date().toISOString().slice(0,10), page: String(page), size: "100", margin_currency_short_name: ["USDT","INR"],
+          }));
+          fills.push(...rows.map(r => ({ ...r, pair: r.pair ?? signal.symbol })));
+          if (rows.length < 100) break;
+          if (page === 100) throw new Error("coindcx_futures_history_incomplete");
+        }
+      }
+    }
+    return fills;
+  }
 
 	async getBalances(userId: number, tradingAccountId: number) {
 		const account = await this.db.getTradingAccountById(userId, tradingAccountId);
@@ -1230,8 +1404,8 @@ export class CoinDCXService {
 		}
 
 		return {
-			apiKey: String(meta.apiKey),
-			apiSecret: String(meta.apiSecret),
+			apiKey: decrypt(String(meta.apiKey)),
+			apiSecret: decrypt(String(meta.apiSecret)),
 			baseUrl: this.cleanBaseUrl(meta.baseUrl || this.defaultBaseUrl),
 			connectedAt: meta.connectedAt || null,
 			verifiedAt: meta.verifiedAt || null,
@@ -1467,7 +1641,7 @@ export class CoinDCXService {
 
 		const rawQuantity = positionSizeInUSDT / input.entryPrice;
 
-		const quantity = this.roundFuturesQuantity(rawQuantity);
+		const quantity = rawQuantity;
 
 		return {
 			positionSizeInMarginCurrency,
@@ -1539,112 +1713,23 @@ export class CoinDCXService {
 		}
 
 		return {
-			stopLossPrice: stopLossPrice > 0 ? this.roundPrice(stopLossPrice) : null,
+			stopLossPrice: stopLossPrice > 0 ? stopLossPrice : null,
 			takeProfitPrice:
-				takeProfitPrice > 0 ? this.roundPrice(takeProfitPrice) : null,
+				takeProfitPrice > 0 ? takeProfitPrice : null,
 		};
 	}
 
-	private roundFuturesQuantity(value: number): number {
-		const step = Number(process.env.COINDCX_FUTURES_QTY_STEP || 0.001);
-
-		if (!Number.isFinite(value) || value <= 0) {
-			return 0;
-		}
-
-		if (!Number.isFinite(step) || step <= 0) {
-			this.throwError(500, "invalid_quantity_step_config");
-		}
-
-		// CoinDCX BTC futures requires quantity like 0.001, 0.002, 0.003...
-		// Floor is safer because it never exceeds the user's selected marginAmount.
-		const stepped = Math.floor(value / step) * step;
-		const decimals = this.getDecimalsFromStep(step);
-
-		return Number(stepped.toFixed(decimals));
-	}
-
-	private getDecimalsFromStep(step: number): number {
-		const text = String(step);
-
-		if (!text.includes(".")) {
-			return 0;
-		}
-
-		return text.split(".")[1].length;
-	}
-
-	private calculateRequiredMarginForMinQuantity(input: {
-		minQuantity: number;
-		entryPrice: number;
-		leverage: number;
-		marginCurrency: "INR" | "USDT";
-		usdtInrRate: number;
-	}): number {
-		const positionSizeUSDT = input.minQuantity * input.entryPrice;
-		const marginUSDT = positionSizeUSDT / input.leverage;
-
-		const margin =
-			input.marginCurrency === "INR"
-				? marginUSDT * input.usdtInrRate
-				: marginUSDT;
-
-		return this.roundPrice(margin);
-	}
-
-	private roundPrice(value: number): number {
-		const decimals = Number(process.env.COINDCX_FUTURES_PRICE_DECIMALS || 2);
-
-		if (!Number.isFinite(value) || value <= 0) {
-			return 0;
-		}
-
-		const factor = Math.pow(10, decimals);
-		return Math.round(value * factor) / factor;
-	}
-
-	private async getLatestFuturesPrice(pair: string): Promise<number> {
-		const normalizedPair = this.normalizeFuturesPair(pair);
-
-		const activeInstruments = await this.publicGet(
-			"/exchange/v1/derivatives/futures/data/active_instruments",
-			{
-				margin_currency_short_name: "USDT",
-			}
-		);
-
-		const items = this.extractResponseArray(activeInstruments);
-
-		const match = items.find((item: any) => {
-			const itemPair = String(
-				item?.pair ??
-					item?.symbol ??
-					item?.market ??
-					item?.instrument_name ??
-					""
-			)
-				.trim()
-				.toUpperCase();
-
-			return itemPair === normalizedPair.toUpperCase();
-		});
-
-		const price = Number(
-			match?.last_price ??
-				match?.lastPrice ??
-				match?.mark_price ??
-				match?.markPrice ??
-				match?.index_price ??
-				match?.indexPrice ??
-				match?.price
-		);
-
-		if (Number.isFinite(price) && price > 0) {
-			return price;
-		}
-
-		this.throwError(400, "latest_futures_price_not_available");
-	}
+    private async getLatestFuturesPrice(pair: string): Promise<number> {
+        // active_instruments only lists symbols; use the documented real-time price feed.
+        const { data } = await axios.get("https://public.coindcx.com/market_data/v3/current_prices/futures/rt", { timeout: this.requestTimeout });
+        const quote = data?.prices?.[this.normalizeFuturesPair(pair)];
+        const price = Number(quote?.ls);
+        const timestamp = Number(data?.ts);
+        if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(timestamp) || Date.now()-timestamp>30000 || timestamp>Date.now()+5000) {
+            this.throwError(400, "latest_futures_price_not_available");
+        }
+        return price;
+    }
 
 	private async getUSDTINRRate(): Promise<number> {
 		const ticker = await this.publicGet("/exchange/ticker");
@@ -1901,6 +1986,7 @@ export class CoinDCXService {
 			payload?.ticker;
 
 		const rawSide =
+			job?.action ??
 			job?.side ??
 			payload?.side ??
 			payload?.action ??
@@ -1908,17 +1994,18 @@ export class CoinDCXService {
 			payload?.transactionType;
 
 		const quantity =
+			job?.volume ??
 			job?.quantity ??
+			payload?.volume ??
 			payload?.quantity ??
 			payload?.qty ??
 			payload?.total_quantity ??
 			payload?.totalQuantity;
 
-		const price =
-			job?.price ??
-			payload?.price ??
-			payload?.price_per_unit ??
-			payload?.pricePerUnit;
+		const price = job && "limitPrice" in job
+			? job.limitPrice
+			: payload?.limitPrice ?? job?.price ?? payload?.price ??
+				payload?.price_per_unit ?? payload?.pricePerUnit;
 
 		const orderType =
 			job?.orderType ??
@@ -1928,17 +2015,25 @@ export class CoinDCXService {
 			"market_order";
 
 		const side = this.normalizeSignalSide(rawSide);
+		const stopLoss = job?.stopLoss ?? job?.sl ?? payload?.stopLoss ?? payload?.sl;
+		const takeProfit = job?.takeProfit ?? job?.tp ?? payload?.takeProfit ?? payload?.tp;
+		const isLimitOrder = this.normalizeOrderType(orderType) === "limit_order";
+		if (isLimitOrder && (price === undefined || price === null || price === "")) {
+			this.throwError(400, "limit_price_required");
+		}
 
 		return this.normalizeOrder({
 			symbol,
 			side,
 			quantity: Number(quantity),
 			price:
-				price !== undefined && price !== null && price !== ""
+				isLimitOrder && price !== undefined && price !== null && price !== ""
 					? Number(price)
 					: undefined,
 			orderType,
 			clientOrderId: job?.id ? `trade_signal_${job.id}` : undefined,
+			stopLoss: stopLoss == null ? undefined : Number(stopLoss),
+			takeProfit: takeProfit == null ? undefined : Number(takeProfit),
 		});
 	}
 
@@ -1959,13 +2054,15 @@ export class CoinDCXService {
 	}
 
 	private extractBrokerOrderId(response: any): string | null {
+		if (Array.isArray(response)) return this.extractBrokerOrderId(response[0]);
 		return (
 			response?.id ??
 			response?.order_id ??
-			response?.client_order_id ??
+			response?.orderId ??
 			response?.orders?.[0]?.id ??
 			response?.data?.id ??
 			response?.data?.order_id ??
+			response?.data?.[0]?.id ??
 			null
 		);
 	}

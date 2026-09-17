@@ -38,6 +38,9 @@ export type CoinDCXOrderPayload = {
 	orderType?: string;
 	price?: number;
 	clientOrderId?: string;
+	/** Persisted protection intent; spot create-order does not attach a bracket. */
+	stopLoss?: number;
+	takeProfit?: number;
 };
 
 export type CoinDCXPlaceOrderRequest = {

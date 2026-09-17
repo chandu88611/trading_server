@@ -1,3 +1,5 @@
+import { MasterFollowerLink } from "../../../entity/MasterFollowerLink";
+import { encryptCredentials, mergeAccountMeta } from "../../../utils/crypto";
 // src/app/tradingAccount/services/tradingAccount.db.ts
 import crypto from "crypto";
 import AppDataSource from "../../../db/data-source";
@@ -106,7 +108,6 @@ export class TradingAccountDBService {
         .andWhere("account.is_master = :isMaster", { isMaster: isMaster })
         .andWhere("account.account_id = :accountId", { accountId })
         .getOne();
-        console.log("Checked for existing master account", { userId, marketCategory, isMaster, accountId, existing });
       if (existing) {
         throw {
           statusCode: HttpStatusCode._CONFLICT,
@@ -172,7 +173,6 @@ export class TradingAccountDBService {
       let subscriberPlanId = await this.getSubscriptionIdForAccount(userId, brokerId.marketCategory,queryRunner);
       let accountId = payload.broker === "DHAN" || payload.broker === "ZEBU" ? payload.accountId : payload.accountLabel?.split("•").pop()?.trim() ?? null;
       await this.alreadyMasterAccountExists(userId, brokerId.marketCategory, payload.isMaster ?? false, accountId as string, queryRunner);
-      console.log("Creating trading account for user with runner", { userId, payload });
       
       console.log("Extracted accountId", { accountId });
       // MT5 accounts get a cryptographically-random poll key that the EA must
@@ -186,7 +186,7 @@ export class TradingAccountDBService {
         accountId: accountId,
         isMaster: payload.isMaster ?? false,
         accountLabel: payload.accountLabel ?? null,
-        accountMeta: payload.accountMeta ?? null,
+        accountMeta: encryptCredentials(payload.accountMeta ?? null),
         credentialsEncrypted: payload.credentialsEncrypted ?? "",
         status: TradingAccountStatus.PENDING,
         subscriptionId: subscriberPlanId,
@@ -219,7 +219,9 @@ export class TradingAccountDBService {
         };
       }
 
+      const nextMeta = mergeAccountMeta(acc.accountMeta, payload.accountMeta);
       Object.assign(acc, payload);
+      acc.accountMeta = encryptCredentials(nextMeta);
       return await this.repo.save(acc);
     } catch (error) {
       if (error instanceof Object && 'statusCode' in error) throw error;
@@ -255,7 +257,9 @@ export class TradingAccountDBService {
         };
       }
 
+      const nextMeta = mergeAccountMeta(acc.accountMeta, payload.accountMeta);
       Object.assign(acc, payload);
+      acc.accountMeta = encryptCredentials(nextMeta);
       return await queryRunner.manager.save(acc);
     } catch (error) {
       if (error instanceof Object && 'statusCode' in error) throw error;
@@ -302,7 +306,6 @@ export class TradingAccountDBService {
           isEnabled: true,
         },
       });
-      console.log("Fetched master accounts for user and broker IDs", { userId, brokerIds, itemData });
 
       if (!itemData || itemData.length === 0) {
         return [];
@@ -311,7 +314,6 @@ export class TradingAccountDBService {
         userId: number;
         id: number;
       }[] = await this.getAllCopyTradingAccounts(itemData.map(item => item.id));
-      console.log("Fetched active master accounts and their copy trading followers", {itemData, userId, brokerIds, masterAccountsCount: itemData.length, copyTradingAccountsCount: copyTradingData.length });
       return [...copyTradingData, ...itemData.map(item => ({ userId: item.userId, id: item.id }))];
     } catch (error) {
       throw error
@@ -325,7 +327,8 @@ export class TradingAccountDBService {
           isActive: true,
         },
       });
-      let UserTradingAccountIds = itemData.map((item) => item.userTradingAccountId);
+      const mamLinks=await AppDataSource.getRepository(MasterFollowerLink).find({where:{masterAccountId:In(masterAccountIds)}});
+      let UserTradingAccountIds = itemData.filter(item=>!mamLinks.some(link=>Number(link.masterAccountId)===Number(item.masterTradingAccountId)&&Number(link.followerAccountId)===Number(item.userTradingAccountId)&&(!link.isActive||link.deletedAt))).map((item) => item.userTradingAccountId);
       const userTradingAccounts = await this.repo.find({
         where: {
           id: In(UserTradingAccountIds),
@@ -401,7 +404,6 @@ export class TradingAccountDBService {
   async getMasterId({UserTradingAccountId, userId, queryRunner}: {UserTradingAccountId: number, userId: number, queryRunner: QueryRunner}) {
     try {
       let accountDetails = await queryRunner.manager.findOne(UserTradingAccount, { where: { id: UserTradingAccountId }, relations: ['broker'] });
-      console.log("Fetched account details for master ID retrieval", { UserTradingAccountId, accountDetails });
       if (!accountDetails) {
         throw {
           statusCode: HttpStatusCode._NOT_FOUND,

@@ -7,6 +7,8 @@ import {
 } from "../../brokerAlerts/interfaces/alertSnapshot.interface";
 
 export interface ICreateTradeSignal extends IndianInstrumentFields {
+  masterTradingAccountId?: number | null;
+  allocationError?: string;
   userId: number;
   tradingAccountId: number;
   alertSnapshotsId: number;

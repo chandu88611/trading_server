@@ -1,3 +1,8 @@
+import { MamLinksService } from "../services/mamLinks.service";
+import { ActivityFeedService } from "../services/activityFeed.service";
+import {getUserFillMetrics} from "../services/fillMetrics.service";
+import { subscribeTradeEvents } from "../services/tradeEvents.service";
+import { EmergencyHaltService } from "../services/emergencyHalt.service";
 // src/app/trade/controllers/trade.controller.ts
 import { Response } from "express";
 import { ControllerError } from "../../../types/error-handler";
@@ -7,6 +12,40 @@ import { TradeAlertService } from "../services/tradeAlert.service";
 import AppDataSource from "../../../db/data-source";
 
 export class TradeController {
+  @ControllerError()
+  async resumeTrading(req:AuthRequest,res:Response) {
+    const accountId=req.body?.accountId;
+    if(typeof accountId!=="number") {res.status(400).json({message:"invalid_account_id"});return;}
+    res.json(await new EmergencyHaltService().resume(Number(req.auth!.userId),accountId));
+  }
+  @ControllerError()
+  async activityFeed(req:AuthRequest,res:Response) {res.json({data:await new ActivityFeedService().list(Number(req.auth!.userId),req.query.accountId===undefined?undefined:Number(req.query.accountId))});}
+  @ControllerError()
+  async listMamLinks(req:AuthRequest,res:Response) {res.json({data:await new MamLinksService().list(Number(req.auth!.userId),Number(req.params.masterAccountId))});}
+  @ControllerError()
+  async createMamLink(req:AuthRequest,res:Response) {res.status(201).json({data:await new MamLinksService().create(Number(req.auth!.userId),req.body)});}
+  @ControllerError()
+  async updateMamLink(req:AuthRequest,res:Response) {res.json({data:await new MamLinksService().update(Number(req.auth!.userId),Number(req.params.id),req.body)});}
+  @ControllerError()
+  async deleteMamLink(req:AuthRequest,res:Response) {await new MamLinksService().update(Number(req.auth!.userId),Number(req.params.id),{},true);res.status(204).send();}
+
+  @ControllerError()
+  async getFillMetrics(req:AuthRequest,res:Response) {
+    res.json({data:await getUserFillMetrics(Number(req.auth!.userId))});
+  }
+
+  @ControllerError()
+  async emergencyHalt(req: AuthRequest, res: Response) {
+    const scope = req.body?.accountId;
+    if (scope !== "ALL" && (!Number.isSafeInteger(Number(scope)) || Number(scope) <= 0)) {
+      res.status(400).json({ message: "invalid_account_scope" }); return;
+    }
+    const result = await new EmergencyHaltService().request(Number(req.auth!.userId), scope === "ALL" ? "ALL" : Number(scope));
+    res.status(202).json(result);
+  }
+
+  events(req: AuthRequest, res: Response) { subscribeTradeEvents(Number(req.auth!.userId),res); }
+
   private service = new TradeService();
   private alertService = new TradeAlertService();
 

@@ -1,3 +1,4 @@
+import { validateRiskConfiguration } from "../trade/services/tradeGuard.service";
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
@@ -413,6 +414,10 @@ export class AdminService {
   }
 
   putRiskRules(body: JsonRecord) {
+    if (typeof body.isEnabled !== "boolean") throw { statusCode: 400, message: "isEnabled_must_be_boolean" };
+    try {
+      validateRiskConfiguration({ ...body.configuration, dailyMaxLoss: body.dailyLossLimit ?? null, dailyProfitTarget: body.dailyProfitTarget ?? null, maxTradesPerDay: body.maxTradesPerDay ?? null, cooldownAfterLossMins: body.cooldownAfterLossMins ?? null });
+    } catch (error: any) { throw { statusCode: 400, message: error.message }; }
     return this.putSingleton("admin_risk_rules", body);
   }
 
@@ -452,10 +457,36 @@ export class AdminService {
     return { rows, total: Number(total[0]?.count ?? 0), limit, offset };
   }
 
+  async listLiveTrades(query: JsonRecord) {
+    const limit = Math.min(toPositiveInt(query.limit, 50), 200);
+    const offset = toOffset(query.offset);
+    const rows = await AppDataSource.query(`SELECT t.id, t.symbol, t.action, t.volume, t.trading_account_id AS "accountId", b.code AS broker, st.status, st.last_error AS "lastError", t.broker_order_id AS "brokerOrderId", st.updated_at AS "updatedAt" FROM trade_signals t JOIN trade_signals_status st ON st.signal_id=t.id JOIN user_trading_accounts a ON a.id=t.trading_account_id JOIN brokers b ON b.id=a.broker_id ORDER BY st.updated_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+    return { rows, limit, offset };
+  }
+
+  async getTradingAccount(id: number) {
+    const [account] = await AppDataSource.query(`SELECT a.id,a.account_id AS "accountId",a.account_label AS "accountLabel",a.user_id AS "userId",u.email AS "userEmail",a.status,a.is_enabled AS "isEnabled",a.last_verified_at AS "lastVerifiedAt",b.code AS broker,b.market_category AS market FROM user_trading_accounts a JOIN users u ON u.id=a.user_id JOIN brokers b ON b.id=a.broker_id WHERE a.id=$1`, [id]);
+    if (!account) throw {statusCode:404,message:"trading_account_not_found"};
+    return account;
+  }
+
+  async toggleTradingAccount(id: number, isEnabled: unknown) {
+    if (typeof isEnabled !== "boolean") throw {statusCode:400,message:"isEnabled_boolean_required"};
+    const rows = await AppDataSource.query(`UPDATE user_trading_accounts SET is_enabled=$2,updated_at=now() WHERE id=$1 AND ($2=false OR status='verified') RETURNING id`, [id,isEnabled]);
+    if (!rows.length) throw {statusCode:409,message:"account_must_be_verified_to_enable"};
+    return this.getTradingAccount(id);
+  }
+
+  async listBrokerAccounts(id: number) {
+    return AppDataSource.query(`SELECT id, account_label AS label, status, is_enabled AS "isEnabled", last_verified_at AS "lastVerifiedAt", user_id AS "userId" FROM user_trading_accounts WHERE broker_id=$1 ORDER BY id DESC LIMIT 200`, [id]);
+  }
+
   async listBrokers() {
     return AppDataSource.query(`
       SELECT id, code, name, market_category AS "marketCategory",
-             is_active AS "isActive", created_at AS "createdAt", updated_at AS "updatedAt"
+             is_active AS "isActive", created_at AS "createdAt", updated_at AS "updatedAt",
+             (SELECT COUNT(*)::int FROM user_trading_accounts a WHERE a.broker_id=brokers.id) AS "accountCount",
+             (SELECT COUNT(*)::int FROM user_trading_accounts a WHERE a.broker_id=brokers.id AND a.status='verified') AS "verifiedCount"
       FROM brokers
       ORDER BY name ASC
     `);
@@ -573,7 +604,9 @@ export class AdminService {
       FROM broker_jobs
       GROUP BY status
     `);
-    return { rows, counts };
+    const signalCounts = await AppDataSource.query(`SELECT status, COUNT(*)::int AS count FROM trade_signals_status GROUP BY status`);
+    const signalRows = await this.listLiveTrades(query);
+    return { rows, counts, signalRows: signalRows.rows, signalCounts };
   }
 
   async listErrors(query: JsonRecord) {
@@ -589,7 +622,8 @@ export class AdminService {
       `,
       [limit, offset]
     );
-    return { rows, limit, offset };
+    const signalErrors = await AppDataSource.query(`SELECT st.id, b.code AS service, 'error' AS severity, st.last_error AS message, st.updated_at AS "createdAt", t.id AS "signalId" FROM trade_signals_status st JOIN trade_signals t ON t.id=st.signal_id JOIN user_trading_accounts a ON a.id=t.trading_account_id JOIN brokers b ON b.id=a.broker_id WHERE st.last_error IS NOT NULL ORDER BY st.updated_at DESC LIMIT $1 OFFSET $2`, [limit, offset]);
+    return { rows, signalErrors, limit, offset };
   }
 
   async listAuditLogs(query: JsonRecord) {

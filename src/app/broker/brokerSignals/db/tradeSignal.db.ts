@@ -1,3 +1,4 @@
+import { allocateFollowers } from "../../../trade/services/mamAllocation.service";
 import { DeepPartial, QueryRunner } from "typeorm";
 import { ICreateTradeSignal } from "../interfaces/tradeSignal.interface";
 import { TradeSignal } from "../../../../entity/TradeSignals";
@@ -13,9 +14,11 @@ export class TradeSignalDB {
     queryRunner: QueryRunner
   ) {
     try {
+      alertData = await allocateFollowers(alertData, queryRunner);
       const createdSignals: DeepPartial<TradeSignal>[] = alertData.map((data) => {
         return {
           userId: data.userId,
+          masterTradingAccountId: data.masterTradingAccountId ?? null,
           tradingAccountId: data.tradingAccountId,
           alertSnapshotsId: data.alertSnapshotsId,
           adminStrategyTradeId: data.adminStrategyTradeId ?? null,
@@ -82,10 +85,11 @@ export class TradeSignalDB {
         .getRepository(TradeSignal)
         .save(entity);
 
-      let StatusEntity = savedSignals.map((signal) => {
+      let StatusEntity = savedSignals.map((signal, index) => {
         return {
           tradeSignalId: signal.id,
-          status: "pending",
+          status: alertData[index].allocationError ? "REJECTED_RISK_LIMIT" : "pending",
+          lastError: alertData[index].allocationError ?? null,
         }
       })
         const statusEntityData = queryRunner.manager.getRepository(TradeSignalStatus).create(StatusEntity);
