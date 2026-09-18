@@ -831,17 +831,71 @@ export class StrategyDBService {
       throw { statusCode: HttpStatusCode._BAD_REQUEST, message: "invalid_strategy_id" };
     }
 
-    const instances = await this.userStrategyRepo
-      .createQueryBuilder("instance")
-      .leftJoinAndSelect("instance.strategy", "strategy")
-      .innerJoinAndSelect("instance.subscription", "subscription")
-      .where("instance.user_id = :userId", { userId })
-      .andWhere("instance.strategy_id = :strategyId", { strategyId })
-      .andWhere("subscription.status_v2 = :subscriptionStatus", {
-        subscriptionStatus: SubscriptionStatus.ACTIVE,
-      })
-      .orderBy("instance.created_at", "DESC")
-      .getMany();
+    const findInstances = () =>
+      this.userStrategyRepo
+        .createQueryBuilder("instance")
+        .leftJoinAndSelect("instance.strategy", "strategy")
+        .innerJoinAndSelect("instance.subscription", "subscription")
+        .where("instance.user_id = :userId", { userId })
+        .andWhere("instance.strategy_id = :strategyId", { strategyId })
+        // Older subscriptions may have only the legacy text status populated.
+        .andWhere("LOWER(COALESCE(subscription.status_v2::text, subscription.status)) = :subscriptionStatus", {
+          subscriptionStatus: SubscriptionStatus.ACTIVE,
+        })
+        .orderBy("instance.created_at", "DESC")
+        .getMany();
+
+    let instances = await findInstances();
+
+    // A subscription can pre-date user_strategy_instances provisioning. Create
+    // the missing row from the subscribed plan's strategy definition so the
+    // strategy-level endpoint can safely enable/disable it.
+    if (!instances.length) {
+      const subscriptionRows = await this.repo.manager.query(
+        `
+        SELECT us.id AS subscription_id,
+               us.plan_id,
+               s.version,
+               s.default_params
+        FROM user_subscriptions us
+        INNER JOIN plan_strategies ps
+          ON ps.plan_id = us.plan_id
+         AND ps.strategy_id = $2
+        INNER JOIN strategies s ON s.id = ps.strategy_id
+        WHERE us.user_id = $1
+          AND LOWER(COALESCE(us.status_v2::text, us.status)) = 'active'
+        ORDER BY us.created_at DESC
+        LIMIT 1
+        `,
+        [userId, strategyId]
+      );
+
+      const subscription = subscriptionRows[0];
+      if (subscription) {
+        await this.repo.manager.query(
+          `
+          INSERT INTO user_strategy_instances(
+            user_id, subscription_id, plan_id, strategy_id,
+            status, strategy_version, frozen_params, volume,
+            activated_at, paused_at, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 0.01,
+                  now(), CASE WHEN $5 = 'paused' THEN now() ELSE NULL END, now())
+          ON CONFLICT (subscription_id, strategy_id) DO NOTHING
+          `,
+          [
+            userId,
+            subscription.subscription_id,
+            subscription.plan_id,
+            strategyId,
+            status,
+            subscription.version,
+            JSON.stringify(subscription.default_params ?? {}),
+          ]
+        );
+        instances = await findInstances();
+      }
+    }
 
     if (!instances.length) {
       throw {
