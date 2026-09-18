@@ -118,7 +118,33 @@ export class AlertSnapshotDB {
 
     const columns = [
       `ALTER TABLE user_trading_accounts ADD COLUMN IF NOT EXISTS risk_metrics JSONB;`,
-      `ALTER TABLE trade_signals_status ALTER COLUMN status TYPE VARCHAR(40);`,
+      // Older installations may still have the status column backed by a
+      // PostgreSQL enum.  Do not unconditionally ALTER it on every boot: the
+      // activity-feed trigger depends on this column and PostgreSQL rejects
+      // that ALTER while the trigger exists.  The current entity already
+      // declares status as varchar, so this is a no-op for current schemas.
+      `
+        DO $$
+        DECLARE current_type text;
+        BEGIN
+          SELECT data_type
+            INTO current_type
+            FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'trade_signals_status'
+             AND column_name = 'status';
+
+          IF current_type IS NOT NULL AND current_type NOT IN ('character varying', 'text') THEN
+            BEGIN
+              ALTER TABLE trade_signals_status
+                ALTER COLUMN status TYPE VARCHAR(40)
+                USING status::text;
+            EXCEPTION WHEN OTHERS THEN
+              RAISE WARNING 'Skipping trade_signals_status.status type migration: %', SQLERRM;
+            END;
+          END IF;
+        END $$;
+      `,
       `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS risk_reserved_at TIMESTAMPTZ;`,
       `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS broker_order_id TEXT;`,
       `ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS broker_position_id TEXT;`,
