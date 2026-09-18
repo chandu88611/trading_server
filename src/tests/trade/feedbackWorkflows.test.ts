@@ -7,6 +7,32 @@ import { EmergencyHaltService } from "../../app/trade/services/emergencyHalt.ser
 import { publicActivity,ActivityFeedService } from "../../app/trade/services/activityFeed.service";
 import { TradeGuardService } from "../../app/trade/services/tradeGuard.service";
 
+test("emergency schema setup skips a missing account-status enum", async t => {
+  const queries: string[] = [];
+  t.mock.method(AppDataSource, "query", async (sql: string) => {
+    queries.push(sql);
+    return sql.includes("FROM pg_type") ? [] : [];
+  });
+  await new EmergencyHaltService().ensureSchema();
+  assert.equal(queries.some(sql => sql.includes("ALTER TYPE user_trading_accounts_status_enum")), false);
+});
+
+test("emergency schema setup logs and continues when enum alteration fails", async t => {
+  const warnings: unknown[] = [];
+  const queries: string[] = [];
+  t.mock.method(console, "warn", (...args: unknown[]) => warnings.push(args));
+  t.mock.method(AppDataSource, "query", async (sql: string) => {
+    queries.push(sql);
+    if (sql.includes("FROM pg_type")) return [{ exists: 1 }];
+    if (sql.includes("ALTER TYPE user_trading_accounts_status_enum")) throw new Error("status column is text");
+    return [];
+  });
+  await new EmergencyHaltService().ensureSchema();
+  assert.equal(queries.some(sql => sql.includes("ALTER TABLE trade_signals")), true);
+  assert.equal(warnings.length, 1);
+  assert.match(String(warnings[0]), /status column is text/);
+});
+
 test("MAM settings reject invalid rules and negative or missing sizing",()=>{
   for(const input of [{allocationType:"INVALID"},{allocationType:"MULTIPLIER",multiplier:0},{allocationType:"MULTIPLIER",maxAllocationLots:-1},{allocationType:"MULTIPLIER",isActive:"true"}])assert.throws(()=>validateMamSettings(input));
   assert.deepEqual(validateMamSettings({allocationType:"PROPORTIONAL_EQUITY",maxAllocationLots:0.25}),{allocationType:"PROPORTIONAL_EQUITY",maxAllocationLots:0.25});

@@ -3,7 +3,33 @@ import { UserTradingAccount } from "../../../entity/UserTradingAccount";
 
 export class EmergencyHaltService {
   async ensureSchema() {
-    await AppDataSource.query(`ALTER TYPE user_trading_accounts_status_enum ADD VALUE IF NOT EXISTS 'halted'`);
+    // Deployments created before the enum migration may use VARCHAR/TEXT for
+    // account status. Never let this compatibility step prevent the server
+    // from starting in those databases.
+    try {
+      const enumType = await AppDataSource.query(
+        `SELECT 1 FROM pg_type WHERE typname = $1 LIMIT 1`,
+        ["user_trading_accounts_status_enum"]
+      );
+
+      if (Array.isArray(enumType) && enumType.length > 0) {
+        try {
+          await AppDataSource.query(
+            `ALTER TYPE user_trading_accounts_status_enum ADD VALUE IF NOT EXISTS 'halted'`
+          );
+        } catch (error: any) {
+          console.warn(
+            "[EmergencyHalt] Could not add halted to the account-status enum; continuing with the existing status column:",
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }
+    } catch (error: any) {
+      console.warn(
+        "[EmergencyHalt] Could not inspect the account-status enum; continuing startup:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
     await AppDataSource.query(`ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS master_trading_account_id bigint REFERENCES user_trading_accounts(id)`);
     await AppDataSource.query(`ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS mam_margin_reserved numeric(28,8)`);
     await AppDataSource.query(`ALTER TABLE trade_signals ALTER COLUMN volume TYPE numeric(28,8)`);
