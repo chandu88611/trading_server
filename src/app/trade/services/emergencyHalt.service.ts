@@ -7,15 +7,21 @@ export class EmergencyHaltService {
     // account status. Never let this compatibility step prevent the server
     // from starting in those databases.
     try {
-      const enumType = await AppDataSource.query(
-        `SELECT 1 FROM pg_type WHERE typname = $1 LIMIT 1`,
-        ["user_trading_accounts_status_enum"]
+      const enumTypes = await AppDataSource.query(
+        `SELECT n.nspname AS schema_name, t.typname AS type_name
+           FROM pg_type t
+           JOIN pg_namespace n ON n.oid = t.typnamespace
+          WHERE t.typtype = 'e'
+            AND t.typname IN ('trading_account_status', 'user_trading_accounts_status_enum')`
       );
 
-      if (Array.isArray(enumType) && enumType.length > 0) {
+      for (const enumType of Array.isArray(enumTypes) ? enumTypes : []) {
+        const typeName = String(enumType.type_name);
+        const schemaName = String(enumType.schema_name || "public");
+        if (!["trading_account_status", "user_trading_accounts_status_enum"].includes(typeName)) continue;
         try {
           await AppDataSource.query(
-            `ALTER TYPE user_trading_accounts_status_enum ADD VALUE IF NOT EXISTS 'halted'`
+            `ALTER TYPE "${schemaName.replace(/"/g, '""')}"."${typeName}" ADD VALUE IF NOT EXISTS 'halted'`
           );
         } catch (error: any) {
           console.warn(

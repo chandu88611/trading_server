@@ -23,8 +23,8 @@ test("emergency schema setup logs and continues when enum alteration fails", asy
   t.mock.method(console, "warn", (...args: unknown[]) => warnings.push(args));
   t.mock.method(AppDataSource, "query", async (sql: string) => {
     queries.push(sql);
-    if (sql.includes("FROM pg_type")) return [{ exists: 1 }];
-    if (sql.includes("ALTER TYPE user_trading_accounts_status_enum")) throw new Error("status column is text");
+    if (sql.includes("FROM pg_type")) return [{ schema_name: "public", type_name: "trading_account_status" }];
+    if (sql.includes("ALTER TYPE")) throw new Error("status column is text");
     return [];
   });
   await new EmergencyHaltService().ensureSchema();
